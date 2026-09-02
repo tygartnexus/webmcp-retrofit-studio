@@ -2,7 +2,7 @@
 
 ## Exact verdict
 
-**Submission verdict: Blocked.** The reviewed local product is a passing release candidate, but the challenge submission is not yet eligible to be represented as complete because its required public repository, licensed source, working public URL, public YouTube demo, entrant attestations, live-public WebMCP UAT, and final Devpost readback do not yet exist.
+**Submission verdict: Blocked.** The reviewed local product is a passing release candidate, but the challenge submission is not yet eligible to be represented as complete because its required public repository, working public URL, public YouTube demo, entrant attestations, live-public WebMCP UAT, and final Devpost readback do not yet exist. The repository, MIT license identity, and GitHub Pages defaults are approved, but approval is not publication evidence.
 
 This is an authorization and public-evidence gate, not a local implementation failure.
 
@@ -24,8 +24,8 @@ The exact local browser evidence is recorded in [`../evidence/local-webmcp-uat-2
 | --- | --- | --- | --- |
 | Product integrity | Green typecheck, tests, coverage, build, E2E, audit | Fresh local receipt exists | Pass |
 | WebMCP behavior | Exact inventory, actual calls, visible postcondition, cleanup | Fresh local real-client receipt exists | Pass locally |
-| Public source | Dedicated public repository, approved license, signed-out readback | Not published; license and copyright identity unapproved | Blocked |
-| Public application | Approved no-cost deployment, public URL, external readback | No public deployment exists | Blocked |
+| Public source | Dedicated public repository, approved license, signed-out readback | MIT under `tygartnexus` is approved and prepared locally; repository is not yet published or read back | Blocked |
+| Public application | Approved no-cost deployment, public URL, external readback | Zero-cost GitHub Pages target is approved; no public deployment or readback exists | Blocked |
 | Live-public WebMCP | Repeat the tool protocol on the exact deployed revision | Only local production-mode UAT exists | Blocked |
 | Public video | Under three minutes, audio, exact live behavior, public YouTube readback | Only an ignored watermarked layout draft using a test double exists | Blocked |
 | Entrant authority | Eligibility, ownership, rights, representative, and work-period attestations | Not supplied | Blocked |
@@ -43,10 +43,8 @@ The exact local browser evidence is recorded in [`../evidence/local-webmcp-uat-2
 
 ## Assumptions and unknowns
 
-- GitHub owner `tygartnexus` is the proposed repository account, but the owner has not approved the exact public release payload.
-- MIT is the recommended license, not an approved license decision.
-- GitHub Pages is the prepared zero-cost hosting path, not an approved or deployed site.
-- Entrant identity, team type, eligibility, representative authority, ownership attestations, copyright identity, narration approval, YouTube channel, and Devpost account state remain unknown.
+- GitHub owner/repository `tygartnexus/webmcp-retrofit-studio`, MIT licensing under the verified public login `tygartnexus`, and the zero-cost GitHub Pages target are approved publication defaults, but none is verified public until readback.
+- Entrant identity, team type, eligibility, representative authority, ownership attestations, narration approval, exact YouTube channel, and Devpost account state remain unknown.
 - Security headers that require an HTTP response rather than HTML metadata must be verified at the chosen public host.
 
 ## Risks and counterarguments
@@ -58,13 +56,13 @@ The exact local browser evidence is recorded in [`../evidence/local-webmcp-uat-2
 
 ## Recommendation
 
-Keep the submission blocked until the exact approval packet is completed. After approval, publish only the standalone sanitized repository, verify it signed out, manually deploy Pages, repeat live WebMCP UAT on that exact revision, record and approve the final public video, then assemble and approve the exact Devpost payload.
+Keep the submission blocked while executing the authorized public-source and Pages steps: publish only the standalone sanitized repository, verify it signed out, manually deploy Pages, and repeat live WebMCP UAT on that exact revision. Then resolve the entrant and media decisions, record and approve the exact public video, and assemble and approve the exact Devpost payload.
 
 Tradeoff: this gate may consume scarce time before the deadline, but it prevents unsupported public claims, accidental publication of the parent workspace, and submission artifacts that point to different revisions.
 
 ## Confidence and change conditions
 
 - Confidence in the local implementation verdict: **0.96**, based on fresh automated verification plus real local WebMCP execution.
-- Confidence that final submission is currently blocked: **1.00**, because the required public URLs and entrant approvals are absent.
+- Confidence that final submission is currently blocked: **1.00**, because the required public URLs, entrant attestations, exact video/channel approval, and final payload approval are absent.
 
 The submission verdict changes from **Blocked** only after every public and attestation row in the release-gate matrix has a fresh, exact readback or owner-supplied confirmation. Any source, account, license, URL, video, or submission-copy change invalidates the affected receipt and requires revalidation.

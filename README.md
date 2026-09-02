@@ -141,14 +141,20 @@ On a fresh Linux CI runner, install Chromium and its system dependencies with `n
 
 The local accepted/concept PNGs are design references, not runtime proof, and are explicitly excluded from the public repository because their redistribution provenance is not established. See the provenance inventory for the release boundary.
 
+## License
+
+The project is licensed under the [MIT License](LICENSE). The copyright identity is the verified public GitHub login `tygartnexus`; this does not assert a personal or legal name.
+
 ## Public-release status
 
-The connected five-step product, local test suites, documentation, and submission drafts exist in this workspace. The following required challenge artifacts remain pending until they are approved, published, and independently read back:
+The connected five-step product, local test suites, documentation, and submission drafts exist in this workspace. The owner has approved these publication defaults: public repository `tygartnexus/webmcp-retrofit-studio`, the MIT License under the verified public login `tygartnexus`, and zero-cost GitHub Pages at `https://tygartnexus.github.io/webmcp-retrofit-studio/`. Approval authorizes those release actions; it is not evidence that they have completed.
 
-- public repository and approved open-source license;
-- public live deployment;
+The following required challenge artifacts remain pending until they are published and independently read back:
+
+- public repository creation, push, license detection, and signed-out readback;
+- public GitHub Pages deployment and external readback;
 - live WebMCP UAT against that deployment;
 - final narrated video and public YouTube URL; and
 - final Devpost payload and submission.
 
-No deployment, public repository, public video, live-client success, or challenge submission is implied by this local implementation.
+Entrant eligibility, ownership, representative authority, work-period and asset-rights attestations, the exact YouTube channel and video release payload, and the final Devpost payload remain unresolved. No deployment, public repository, public video, live-client success, or challenge submission is implied by this local implementation or by publication approval alone.

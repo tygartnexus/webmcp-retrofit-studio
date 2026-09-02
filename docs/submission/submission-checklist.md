@@ -30,7 +30,7 @@ Do not rely on a local clock alone. Reopen the official rules and Devpost submis
 
 ## Public repository
 
-- [ ] Owner approves the repository name, public visibility, copyright identity, and open-source license.
+- [x] Owner approved public `tygartnexus/webmcp-retrofit-studio`, copyright identity `tygartnexus` (verified public GitHub login), and the MIT License.
 - [ ] An approved open-source `LICENSE` file is at the repository root and detected on the repository page.
 - [ ] The public repository contains all source, assets, lockfile, setup instructions, testing instructions, and submission documentation needed to run the project.
 - [ ] Repository history documents work created during the August 25 to September 3 submission period, or the entrant supplies equivalent dated evidence.
@@ -38,11 +38,11 @@ Do not rely on a local clock alone. Reopen the official rules and Devpost submis
 - [ ] The default branch revision matches the revision used for deployment and video recording.
 - [ ] A signed-out public readback confirms the repository URL, license badge/detection, file visibility, and setup instructions.
 
-Current status: **pending owner license decision, public repository creation, push, and public readback**.
+Current status: **publication defaults approved; pending public repository creation, push, license detection, and public readback**.
 
 ## Live application
 
-- [ ] Owner approves the no-cost hosting target and public URL.
+- [x] Owner approved zero-cost GitHub Pages at `https://tygartnexus.github.io/webmcp-retrofit-studio/`.
 - [ ] Production build deploys successfully with no credentials or paid dependency.
 - [ ] HTTPS, title, favicon behavior, asset loading, deep-link behavior, and security headers have been checked from outside the deployment session.
 - [ ] The app remains free and accessible without restrictions through the judging period ending September 21, 2026 at 5:00 PM Pacific Time.
@@ -50,7 +50,7 @@ Current status: **pending owner license decision, public repository creation, pu
 - [ ] The live WebMCP UAT protocol passes for all three allowed tools, the visible draft postcondition, and negative finalization inventory.
 - [ ] The live build functions exactly as depicted in the final video and described in the submission text.
 
-Current status: **pending deployment, public readback, and live-client UAT**.
+Current status: **hosting default approved; pending deployment, public readback, and live-client UAT**.
 
 ## Demonstration video
 

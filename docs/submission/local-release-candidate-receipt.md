@@ -2,7 +2,7 @@
 
 ## Verdict
 
-**The local release candidate is verified. Public submission is still blocked at the owner/account approval boundary.** This receipt does not imply that a repository, deployment, video, or Devpost entry is public.
+**The local release candidate is verified. Public submission is still blocked by missing public evidence and unresolved entrant, video/channel, and final-submission gates.** This receipt does not imply that a repository, deployment, video, or Devpost entry is public.
 
 ## Reviewed product
 
@@ -77,13 +77,15 @@ This is a watermarked layout/timing draft. Its capture script injects a WebMCP t
 - The in-app Devpost session is logged out and still shows **Join hackathon**; participant registration and a submission draft are not verified.
 - The guarded YouTube automation path has no active channel mapping, channel id, or OAuth token; manual upload authentication is unverified.
 
-## Required owner decisions before public action
+## Post-receipt publication authorization
+
+The owner subsequently approved these exact defaults: public repository `tygartnexus/webmcp-retrofit-studio`, MIT licensing under the verified public GitHub login `tygartnexus`, and zero-cost GitHub Pages at `https://tygartnexus.github.io/webmcp-retrofit-studio/`. This authorization does not change the local test evidence above and is not proof that publication or deployment succeeded.
+
+## Required owner decisions before video publication or submission
 
 1. Entrant type, eligibility, team/organization representative, original-work/ownership, and work-period attestations.
-2. Public GitHub owner and copyright identity.
-3. Open-source license; MIT is recommended but not assumed.
-4. GitHub Pages public deployment under the approved repository.
-5. Final narration voice, video file, thumbnail, YouTube channel, title, audience, and Public visibility.
-6. Exact Devpost payload and final Submit approval.
+2. Accepted design-reference redistribution rights.
+3. Final narration voice, video file, thumbnail, YouTube channel, title, audience, and Public visibility.
+4. Exact Devpost payload and final Submit approval.
 
 Any change to source, hashes, public accounts, license, deployment, video, or submission copy invalidates the corresponding receipt and requires fresh verification.
