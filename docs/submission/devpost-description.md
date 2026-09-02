@@ -28,7 +28,7 @@ The five-step flow makes the evidence, approval state, and finalization boundary
 4. **Validate generated tools** activates the reviewed tool group only after the version is locked, executes eight deterministic checks, and provides an ordinary booking form. A successful `stage_booking` call updates every visible draft field for inspection before confirmation through the UI.
 5. **Export retrofit package** creates a deterministic clean-room bundle containing generated registration code, a manifest, and an evidence record. Downloading the bundle does not deploy or publish anything.
 
-If WebMCP is unavailable, the ordinary visible booking interface still works. The app does not pretend that a local deterministic check proves live agent discovery; live-client UAT is tracked as a separate release gate.
+If WebMCP is unavailable, the ordinary visible booking interface still works. The app does not pretend that a local deterministic check proves live agent discovery. A separate public-client receipt records discovery, execution, visible-state verification, and registration cleanup against the deployed build.
 
 ### What people and agents can do together that was difficult before
 
@@ -47,7 +47,7 @@ The app also includes an Accuracy, Evidence, and Honest Feedback framework. Six 
 ### Judging-criteria fit
 
 - **WebMCP Leverage:** The project uses three non-trivial imperative tools, explicit annotations, strict schemas, lifecycle cleanup, visible postconditions, and a deliberate finalization boundary outside the WebMCP tool surface.
-- **Execution:** Scan, review, preview, validation, visible draft staging, and deterministic export form one guarded product flow rather than an isolated API example. Live URL and live-client verification remain release gates until independently read back.
+- **Execution:** Scan, review, preview, validation, visible draft staging, and deterministic export form one guarded product flow rather than an isolated API example. The live URL and public-client WebMCP behavior have been independently read back for the tested application revision.
 - **Potential Impact:** The target audience is website owners and product teams with useful legacy workflows but no agent contract. The prototype shows a bounded retrofit path; it does not claim universal compatibility or production readiness.
 - **Creativity and Ambition:** The project treats retrofit generation as an evidence and governance problem, not only a code-generation problem. It combines source fingerprints, approval hashes, stale-artifact invalidation, truth-contract review modes, deterministic validation, and a clean-room export boundary.
 
@@ -56,9 +56,9 @@ The app also includes an Accuracy, Evidence, and Honest Feedback framework. Six 
 | Required field | Status at packaging time |
 | --- | --- |
 | Text description | Ready for owner review |
-| Working live URL | Pending public deployment and public readback |
-| Public open-source repository URL | Pending license approval, repository publication, and public readback |
-| Public YouTube demo URL | Pending final recording, owner approval, upload, and public readback |
-| Live WebMCP UAT evidence | Pending execution in a supported live client against the public URL |
+| Working live URL | Verified: `https://tygartnexus.github.io/webmcp-retrofit-studio/` |
+| Public open-source repository URL | Verified: `https://github.com/tygartnexus/webmcp-retrofit-studio` with provider-detected MIT License |
+| Public YouTube demo URL | Local compliant candidate prepared; pending exact owner/channel approval, upload, and public readback |
+| Live WebMCP UAT evidence | Passed against application commit `291cc98d3efca19e1db9fbdf7493a37d05275902`; see `docs/evidence/public-webmcp-uat-2026-09-02.md` |
 
-These pending statuses are release facts, not missing text fields. They must be replaced by verified public URLs or evidence in the Devpost form before final submission.
+The remaining video status is a release fact, not a missing text field. The verified application and repository URLs must be copied exactly, and the public YouTube URL must be added only after signed-out playback and audio readback.

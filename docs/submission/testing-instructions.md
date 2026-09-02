@@ -2,7 +2,7 @@
 
 ## Access
 
-The public live URL is pending deployment and independent readback. The final Devpost form must contain the verified URL rather than a provisional address.
+Open the verified public application at `https://tygartnexus.github.io/webmcp-retrofit-studio/`. The September 2, 2026 public-client receipt binds the behavior below to source commit `291cc98d3efca19e1db9fbdf7493a37d05275902` and deployed JavaScript SHA-256 `411cc3305138ff971502f99837577f82219d30591e59866e80e2e64eb81aa82d`.
 
 The application is designed to require no login, credentials, payment, API key, backend, or real customer data. All services, schedules, snapshots, and booking drafts are synthetic and browser-local.
 
@@ -13,7 +13,7 @@ For WebMCP tool testing, use either:
 
 ## Five-step product walkthrough
 
-1. Open the verified public URL.
+1. Open `https://tygartnexus.github.io/webmcp-retrofit-studio/`.
 2. On **Scan owned fixture**, read the safety boundary, attest that the bundled synthetic fixture is authorized for the demo, and start the scan.
 3. Confirm the result says the source is a bundled synthetic snapshot and shows a source fingerprint. The scan must not request credentials or fetch an external website.
 4. Continue to **Candidate capabilities**. Confirm the eligible tools are exactly:

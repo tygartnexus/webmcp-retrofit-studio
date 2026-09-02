@@ -68,7 +68,7 @@ A new scan increments the workflow revision and clears approval, preview, valida
 
 ## Product screenshots
 
-These release screenshots were generated from the verified local production-mode build; they contain no account, customer, or credential data.
+These release screenshots were generated from the verified production-mode build; they contain no account, customer, or credential data. The final image below preserves the visible postcondition from the public WebMCP UAT.
 
 ![Evidence-based Candidate review](docs/screenshots/candidates-desktop.png)
 
@@ -76,13 +76,15 @@ These release screenshots were generated from the verified local production-mode
 
 ![Guarded local Export screen](docs/screenshots/export-desktop.png)
 
+![Public Validate WebMCP UAT](docs/screenshots/validate-public-uat.png)
+
 ## WebMCP runtime
 
 The adapter feature-detects `document.modelContext.registerTool` and registers from the top-level page. That matches the current [OpenAI Site Tools guidance](https://learn.chatgpt.com/docs/webmcp), whose built-in browser support does not currently discover declarative or iframe-registered tools. Registration cleanup and callback cancellation follow the current [Chrome imperative API](https://developer.chrome.com/docs/ai/webmcp/imperative-api), and annotations/output limits follow [Chrome's WebMCP security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools).
 
 The approval and Preview views serialize the same deeply frozen contract objects used during runtime registration. The generated export source contains an explicit top-level `document.modelContext.registerTool` loop, a caller-owned registration signal, a disposer, and a pre-dispatch execution-cancellation check; it delegates execution to an owner-reviewed adapter rather than synthesizing remote or arbitrary code. For asynchronous or state-changing integrations, that adapter must honor the supplied client signal transactionally. The wrapper does not relabel a completed adapter outcome if cancellation or registration cleanup races its return.
 
-Mocked registration, deterministic browser-session checks, and Chromium E2E tests verify local application behavior. A separate [local in-app-browser receipt](docs/evidence/local-webmcp-uat-2026-09-02.md) verifies real local WebMCP discovery and execution. None of those checks establish that the final public URL is reachable or identical; release evidence requires repeating [`docs/live-webmcp-uat.md`](docs/live-webmcp-uat.md) against the deployed revision.
+Mocked registration, deterministic browser-session checks, and Chromium E2E tests verify local application behavior. A [local in-app-browser receipt](docs/evidence/local-webmcp-uat-2026-09-02.md) verifies real local WebMCP discovery and execution. The [public UAT receipt](docs/evidence/public-webmcp-uat-2026-09-02.md) separately records a complete pass against the deployed application from source commit `291cc98d3efca19e1db9fbdf7493a37d05275902`, including exact tool calls, the visible postcondition, cleanup, and deployed-asset hashes.
 
 ## Architecture
 
@@ -128,16 +130,18 @@ On a fresh Linux CI runner, install Chromium and its system dependencies with `n
 - [AI response quality framework](docs/ai-response-quality-framework.md)
 - [Live WebMCP UAT protocol](docs/live-webmcp-uat.md)
 - [Passing local WebMCP UAT receipt](docs/evidence/local-webmcp-uat-2026-09-02.md)
+- [Passing public WebMCP UAT receipt](docs/evidence/public-webmcp-uat-2026-09-02.md)
 - [Local release-candidate receipt](docs/submission/local-release-candidate-receipt.md)
 - [Devpost-ready description](docs/submission/devpost-description.md)
 - [Judge testing instructions](docs/submission/testing-instructions.md)
 - [Submission checklist](docs/submission/submission-checklist.md)
 - [Judge-facing final audit](docs/submission/judge-final-audit.md)
 - [Public-release approval packet](docs/submission/public-release-approval-packet.md)
+- [Owner attestation packet](docs/submission/owner-attestation-packet.md)
 - [Asset provenance inventory](docs/submission/asset-provenance.md)
 - [Demo script and storyboard](docs/submission/demo-script-storyboard.md)
 - [Design fidelity ledger](docs/design/fidelity-ledger.md)
-- Runtime screenshots under `docs/screenshots/` are regenerated from the reviewed build before public release.
+- Runtime screenshots under `docs/screenshots/` include reviewed local build captures and the hash-bound public Validate UAT capture.
 
 The local accepted/concept PNGs are design references, not runtime proof, and are explicitly excluded from the public repository because their redistribution provenance is not established. See the provenance inventory for the release boundary.
 
@@ -147,14 +151,13 @@ The project is licensed under the [MIT License](LICENSE). The copyright identity
 
 ## Public-release status
 
-The connected five-step product, local test suites, documentation, and submission drafts exist in this workspace. The owner has approved these publication defaults: public repository `tygartnexus/webmcp-retrofit-studio`, the MIT License under the verified public login `tygartnexus`, and zero-cost GitHub Pages at `https://tygartnexus.github.io/webmcp-retrofit-studio/`. Approval authorizes those release actions; it is not evidence that they have completed.
+The public source, deployment, and live-client WebMCP gates pass for the tested application revision:
 
-The following required challenge artifacts remain pending until they are published and independently read back:
+- The [public repository](https://github.com/tygartnexus/webmcp-retrofit-studio) was read back with public visibility, `main` at `291cc98d3efca19e1db9fbdf7493a37d05275902`, and a provider-detected MIT License. Verification run `33640129650` passed.
+- The [zero-cost GitHub Pages deployment](https://tygartnexus.github.io/webmcp-retrofit-studio/) was read back signed out over HTTPS with HTTP 200. Deployment run `33640576035` passed.
+- The deployed `index-DdYXLZe8.js` SHA-256 is `411cc3305138ff971502f99837577f82219d30591e59866e80e2e64eb81aa82d`, matching the verified local production asset.
+- Public WebMCP UAT passed in the Codex In-app Browser on a Chrome 151 engine: Scan and Preview exposed zero tools; Validate exposed exactly `search_services`, `get_availability`, and `stage_booking`; all calls returned the expected synthetic results; the visible Repair draft matched; `finalize_booking` remained absent; and leaving Validate removed the tools.
 
-- public repository creation, push, license detection, and signed-out readback;
-- public GitHub Pages deployment and external readback;
-- live WebMCP UAT against that deployment;
-- final narrated video and public YouTube URL; and
-- final Devpost payload and submission.
+GitHub Pages supplied HSTS, while response-level `Content-Security-Policy`, `X-Frame-Options`, and `X-Content-Type-Options` were absent at readback. The page itself retains its HTML meta CSP and `no-referrer` policy. See the [public receipt](docs/evidence/public-webmcp-uat-2026-09-02.md) for the complete evidence boundary.
 
-Entrant eligibility, ownership, representative authority, work-period and asset-rights attestations, the exact YouTube channel and video release payload, and the final Devpost payload remain unresolved. No deployment, public repository, public video, live-client success, or challenge submission is implied by this local implementation or by publication approval alone.
+The challenge submission remains blocked by the final public YouTube video and readback, entrant eligibility/ownership/authority/work-period and asset-rights attestations, Devpost authentication and draft preparation, exact final-payload approval, final Submit, and resulting entry readback. The documentation receipt added after the tested revision is not represented as a newly tested application build.

@@ -2,9 +2,9 @@
 
 ## Current status
 
-**Pending for the public deployment.** Real local in-app-browser discovery and execution passed on September 2, 2026, alongside mocked registration, deterministic checks, and Chromium E2E. That local evidence does not establish that the final public URL is reachable, identical, or discoverable by the judging client.
+**PASS for the public deployment from source commit `291cc98d3efca19e1db9fbdf7493a37d05275902`.** The complete protocol was run on September 2, 2026 against `https://tygartnexus.github.io/webmcp-retrofit-studio/` in the Codex In-app Browser on a Chrome 151 engine. The deployed JavaScript SHA-256 was `411cc3305138ff971502f99837577f82219d30591e59866e80e2e64eb81aa82d`, matching the verified production build.
 
-This protocol becomes a passing release artifact only after it is run against the final public URL and committed revision, with the required evidence preserved.
+The exact inventory, calls, visible postcondition, negative finalization check, lifecycle cleanup, browser health, public readback, and screenshot digest are preserved in the [public UAT receipt](evidence/public-webmcp-uat-2026-09-02.md). A later documentation-only commit does not become the tested application revision. Any deployed application or asset change requires the protocol to be rerun.
 
 ## Purpose
 
@@ -148,4 +148,4 @@ A passing receipt must include:
 - reviewer identity or role and an explicit Pass verdict;
 - statement that no live booking, credential, payment, or external provider call occurred.
 
-Until such a public-URL receipt exists, the accurate status is: **public-deployment WebMCP UAT pending; passing local browser evidence only**.
+The current accurate status is: **public-deployment WebMCP UAT passed for source commit `291cc98d3efca19e1db9fbdf7493a37d05275902`; video publication and Devpost submission remain separate gates**.
