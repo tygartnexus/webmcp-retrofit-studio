@@ -1,0 +1,11 @@
+node_modules/
+.npm-cache/
+dist/
+coverage/
+test-results/
+playwright-report/
+artifacts/
+docs/design/accepted-*.png
+docs/design/concept-scan-preview-export.png
+*.local
+*.tsbuildinfo

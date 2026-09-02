@@ -1,0 +1,17 @@
+WebMCP Retrofit Studio helps a website owner turn an existing human workflow into narrow, reviewable tools for agents. This demonstration uses only a bundled synthetic booking fixture.
+
+The owner must authorize the fixture before scanning. The scan parses an inert local snapshot, makes no external request, retains no raw form values, and produces a source fingerprint for the evidence chain.
+
+The review proposes three tools: search services, get availability, and reversible draft staging. Final booking is excluded. Six review modes can challenge the proposal, but every mode preserves facts, evidence, assumptions, unknowns, confidence, risks, counterarguments, tradeoffs, and the evidence that would change the recommendation.
+
+Approval creates a preview bound to exact proposal and version hashes. The contracts displayed here are the same shared objects used for top-level WebMCP registration, reducing display-to-execution drift.
+
+In a compatible browser, the page registers exactly three imperative tools. Search and availability are read-only. Stage booking is explicitly state-changing, but it can create only a reversible local draft. Its visible postcondition updates the booking interface so the person can inspect exactly what was staged.
+
+Final confirmation remains outside WebMCP. It stays in the visible interface and presents the exact draft values. This synthetic demo never contacts a booking service or creates a real transaction.
+
+Eight deterministic checks execute in the current browser, and the app keeps those results separate from live-client user acceptance evidence. A pass score is never shown before the checks actually run.
+
+After validation and exact bundle-hash approval, the owner can download generated registration code, a manifest, and a redacted evidence record. Export performs no deployment and no publication.
+
+That is the bridge: explicit tools for the agent, observable state for the person, and version-bound evidence for the website owner.
