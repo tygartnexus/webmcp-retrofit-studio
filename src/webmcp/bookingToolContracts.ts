@@ -29,6 +29,7 @@ function deepFreeze<T>(value: T): T {
 const SERVICE_ID_SCHEMA = deepFreeze({
   type: "string",
   enum: ["consultation", "installation", "repair"],
+  description: "One of the three fixed synthetic service ids.",
 } as const);
 
 export const SEARCH_SERVICES_TOOL_CONTRACT = deepFreeze({
@@ -39,7 +40,11 @@ export const SEARCH_SERVICES_TOOL_CONTRACT = deepFreeze({
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", maxLength: 80 },
+      query: {
+        type: "string",
+        maxLength: 80,
+        description: "Optional text matched against synthetic service ids and names.",
+      },
     },
     additionalProperties: false,
   },
@@ -81,11 +86,13 @@ export const STAGE_BOOKING_TOOL_CONTRACT = deepFreeze({
         type: "string",
         pattern: "^\\d{4}-\\d{2}-\\d{2}$",
         maxLength: 10,
+        description: "Calendar date of an available slot, formatted YYYY-MM-DD.",
       },
       time: {
         type: "string",
         pattern: "^\\d{2}:\\d{2}$",
         maxLength: 5,
+        description: "Start time of the available slot, formatted HH:MM in 24-hour time.",
       },
     },
     required: ["serviceId", "date", "time"],

@@ -75,7 +75,7 @@ describe("deterministic export bundle", () => {
     expect(first.generatedJavaScript).toContain("registrationController.abort");
     expect(first.generatedJavaScript).toContain("client?.signal?.aborted");
     for (const toolName of BOOKING_TOOL_NAMES) {
-      expect(first.generatedJavaScript).toContain(`\"${toolName}\"`);
+      expect(first.generatedJavaScript).toContain(`"${toolName}"`);
     }
   });
 

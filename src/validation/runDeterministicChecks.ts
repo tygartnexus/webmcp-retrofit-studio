@@ -35,6 +35,19 @@ export interface ExpectedRejection {
   message: RegExp;
 }
 
+/**
+ * Test seams. Production callers pass nothing; the failure-path tests use
+ * these to break one tool at a time and prove each check can fail.
+ */
+export interface DeterministicCheckOptions {
+  /** Rewrite or drop (return null) a tool before the mock context stores it. */
+  transformTool?: (
+    tool: WebMCP.ModelContextTool,
+  ) => WebMCP.ModelContextTool | null;
+  /** Tools present in the mock context that the adapter did not register. */
+  extraTools?: readonly WebMCP.ModelContextTool[];
+}
+
 function expectCondition(condition: unknown, failureMessage: string): void {
   if (!condition) throw new Error(failureMessage);
 }
@@ -87,18 +100,30 @@ export function isPassingDeterministicReport(
   );
 }
 
-export async function runDeterministicChecks(): Promise<DeterministicReport> {
-  const tools = new Map<string, WebMCP.ModelContextTool>();
-  const modelContext: ModelContextLike = {
+function createMockContext(
+  tools: Map<string, WebMCP.ModelContextTool>,
+  transformTool: NonNullable<DeterministicCheckOptions["transformTool"]>,
+): ModelContextLike {
+  return {
     async registerTool(tool, options) {
-      tools.set(tool.name, tool);
+      const stored = transformTool(tool);
+      if (stored === null) return;
+      tools.set(stored.name, stored);
       options?.signal?.addEventListener(
         "abort",
-        () => tools.delete(tool.name),
+        () => tools.delete(stored.name),
         { once: true },
       );
     },
   };
+}
+
+export async function runDeterministicChecks(
+  options: DeterministicCheckOptions = {},
+): Promise<DeterministicReport> {
+  const transformTool = options.transformTool ?? ((tool) => tool);
+  const tools = new Map<string, WebMCP.ModelContextTool>();
+  const modelContext = createMockContext(tools, transformTool);
   const store = createBookingStore();
   let visibleDraftId: string | null = null;
   const registration = await registerBookingTools({
@@ -108,6 +133,10 @@ export async function runDeterministicChecks(): Promise<DeterministicReport> {
       visibleDraftId = draft.id;
     },
   });
+  for (const extra of options.extraTools ?? []) tools.set(extra.name, extra);
+  const registeredNames = [...tools.keys()].filter((name) =>
+    (BOOKING_TOOL_NAMES as readonly string[]).includes(name),
+  );
   const execution = { signal: new AbortController().signal };
   const checks: DeterministicCheckResult[] = [];
 
@@ -133,7 +162,9 @@ export async function runDeterministicChecks(): Promise<DeterministicReport> {
 
   await run(DETERMINISTIC_CHECKS[0], () => {
     expectCondition(
-      registration.registeredTools.join(",") === BOOKING_TOOL_NAMES.join(","),
+      tools.size === BOOKING_TOOL_NAMES.length &&
+        registeredNames.join(",") === BOOKING_TOOL_NAMES.join(",") &&
+        registration.registeredTools.join(",") === BOOKING_TOOL_NAMES.join(","),
       "Registered inventory did not match the allowlist",
     );
   });

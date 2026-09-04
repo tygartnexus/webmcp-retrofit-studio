@@ -430,6 +430,9 @@ function QualityEvidence({
           <small className="mode-prompt-route">
             Prompt route: {presentation.prompt.title} · v
             {presentation.prompt.version}
+            {presentation.supplementaryPrompt
+              ? ` + ${presentation.supplementaryPrompt.title} · v${presentation.supplementaryPrompt.version}`
+              : null}
           </small>
         </span>
       </div>

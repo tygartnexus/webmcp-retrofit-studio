@@ -3,6 +3,8 @@ import type { QualitySectionKey, ResponseModeId } from "./responseQuality";
 
 export interface ReviewModeConfiguration {
   prompt: VersionedPromptTemplate;
+  /** Optional second lens applied after the primary prompt. */
+  supplementaryPrompt?: VersionedPromptTemplate;
   emphasis: string;
   sectionOrder: readonly QualitySectionKey[];
 }
@@ -42,6 +44,7 @@ export const REVIEW_MODE_CONFIG = Object.freeze({
   },
   "red-team": {
     prompt: PROMPT_TEMPLATES.redTeamReview,
+    supplementaryPrompt: PROMPT_TEMPLATES.biasDetection,
     emphasis:
       "Lead with credible failure modes, missing proof, and the strongest challenge to the proposal.",
     sectionOrder: [
@@ -58,6 +61,7 @@ export const REVIEW_MODE_CONFIG = Object.freeze({
   },
   ceo: {
     prompt: PROMPT_TEMPLATES.ceoRealityCheck,
+    supplementaryPrompt: PROMPT_TEMPLATES.executiveDecisionMatrix,
     emphasis:
       "Lead with the decision, tradeoffs, stop conditions, and the evidence needed to justify more investment.",
     sectionOrder: [

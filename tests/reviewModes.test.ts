@@ -31,3 +31,24 @@ describe("review mode routing", () => {
     );
   });
 });
+
+describe("prompt template coverage", () => {
+  it("routes every versioned template through at least one review mode", async () => {
+    const { PROMPT_TEMPLATE_IDS } = await import("../src/quality/promptTemplates");
+    const routed = new Set<string>();
+    for (const mode of RESPONSE_MODES) {
+      const config = getReviewModeConfiguration(mode.id);
+      routed.add(config.prompt.id);
+      if (config.supplementaryPrompt) routed.add(config.supplementaryPrompt.id);
+    }
+
+    for (const id of PROMPT_TEMPLATE_IDS) {
+      expect(routed.has(id)).toBe(true);
+    }
+  });
+
+  it("pairs bias detection with red team and the decision matrix with the CEO mode", async () => {
+    expect(getReviewModeConfiguration("red-team").supplementaryPrompt?.id).toBe("biasDetection");
+    expect(getReviewModeConfiguration("ceo").supplementaryPrompt?.id).toBe("executiveDecisionMatrix");
+  });
+});
