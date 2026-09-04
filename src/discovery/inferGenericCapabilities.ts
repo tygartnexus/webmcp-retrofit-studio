@@ -1,0 +1,252 @@
+import { canonicalJson, sha256Hex } from "./scanOwnedFixture";
+import type {
+  CapabilityObservation,
+  FieldObservation,
+  GenericScanResult,
+  RiskClass,
+} from "./scanHtml";
+import { deepFreeze } from "../lib/deepFreeze";
+
+/**
+ * Turns scanner observations into reviewable tool proposals. Read and write
+ * capabilities become tools; finalizing and credential capabilities are kept
+ * off the tool surface and listed as exclusions with the reason, so the owner
+ * sees them and the presence gate covers finalization on the visible page.
+ */
+
+export interface PropertySchema {
+  type: "string" | "number" | "integer" | "boolean";
+  description: string;
+  enum?: readonly string[];
+  format?: string;
+  pattern?: string;
+  minimum?: number;
+  maximum?: number;
+  maxLength?: number;
+}
+
+export interface ProposedToolSchema {
+  type: "object";
+  properties: Record<string, PropertySchema>;
+  required?: readonly string[];
+  additionalProperties: false;
+}
+
+export interface ProposedTool {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: ProposedToolSchema;
+  annotations: { readOnlyHint: boolean; untrustedContentHint: true };
+  riskClass: Extract<RiskClass, "read" | "write">;
+  capabilityId: string;
+  evidenceIds: readonly string[];
+  outputColumns?: readonly string[];
+}
+
+export interface ExcludedCapability {
+  capabilityId: string;
+  riskClass: Extract<RiskClass, "finalize" | "credential">;
+  actionLabel: string;
+  reason: string;
+}
+
+export interface GenericProposal {
+  scanHash: string;
+  proposalHash: string;
+  versionHash: string;
+  tools: readonly ProposedTool[];
+  excluded: readonly ExcludedCapability[];
+  humanConfirmationBoundary: "outside-tool-surface";
+}
+
+const INFERENCE_VERSION = "generic-inference-v1";
+const NAME_BUDGET = 30;
+/** Room for `_NNN` so a suffixed name still fits the budget. */
+const SUFFIX_HEADROOM = 4;
+const MAX_NAME_SUFFIX = 999;
+const DESCRIPTION_BUDGET = 150;
+const LEADING_VERBS = /^(search|find|filter|browse|look ?up|read|view|show|list)\s+/i;
+const FINALIZE_REASON =
+  "Finalizing actions stay on the visible interface behind the human presence ceremony; no tool can perform them.";
+const CREDENTIAL_REASON = "Credential entry never becomes a tool; the person signs in on the visible interface.";
+
+
+export function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+function budgetName(name: string, budget: number = NAME_BUDGET): string {
+  if (name.length <= budget) return name;
+  const cut = name.slice(0, budget);
+  const boundary = cut.lastIndexOf("_");
+  return boundary > 4 ? cut.slice(0, boundary) : cut;
+}
+
+/**
+ * Names must be unique within a proposal and within the 30-character budget.
+ * Collisions get a numeric suffix on a shortened stem so the suffix always
+ * fits; the search is bounded, and running out is an explicit error rather
+ * than a hang.
+ */
+function uniqueName(candidate: string, taken: Set<string>): string {
+  let name = budgetName(candidate) || "tool";
+  if (/^[0-9]/.test(name)) name = `t_${name}`;
+  if (!taken.has(name)) {
+    taken.add(name);
+    return name;
+  }
+  const stem = budgetName(name, NAME_BUDGET - SUFFIX_HEADROOM) || "tool";
+  for (let suffix = 2; suffix <= MAX_NAME_SUFFIX; suffix += 1) {
+    const unique = `${stem}_${suffix}`;
+    if (!taken.has(unique)) {
+      taken.add(unique);
+      return unique;
+    }
+  }
+  throw new Error(`Could not derive a unique tool name from "${candidate}" within ${MAX_NAME_SUFFIX} attempts.`);
+}
+
+function truncate(value: string, budget: number): string {
+  return value.length <= budget ? value : `${value.slice(0, budget - 1).trimEnd()}…`;
+}
+
+function objectNoun(capability: CapabilityObservation): string {
+  const searchField = capability.fields.find((field) => field.inputType === "search" || /search/i.test(field.label ?? ""));
+  const source = searchField?.label ?? capability.heading;
+  return source.replace(LEADING_VERBS, "").trim() || "items";
+}
+
+function propertyFor(field: FieldObservation): PropertySchema {
+  const description = truncate(field.label ?? field.placeholder ?? field.name, DESCRIPTION_BUDGET);
+  const base: PropertySchema = { type: "string", description };
+  switch (field.kind) {
+    case "number":
+      return {
+        ...base,
+        type: "number",
+        ...(field.min !== undefined ? { minimum: field.min } : {}),
+        ...(field.max !== undefined ? { maximum: field.max } : {}),
+      };
+    case "boolean":
+      return { ...base, type: "boolean" };
+    case "enum":
+      return { ...base, ...(field.options && field.options.length > 0 ? { enum: field.options } : {}) };
+    case "email":
+      return { ...base, format: "email" };
+    case "url":
+      return { ...base, format: "uri" };
+    case "date":
+      return { ...base, pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
+    case "time":
+      return { ...base, pattern: "^\\d{2}:\\d{2}$" };
+    default:
+      return {
+        ...base,
+        ...(field.pattern ? { pattern: field.pattern } : {}),
+        ...(field.maxLength !== undefined ? { maxLength: field.maxLength } : {}),
+      };
+  }
+}
+
+function schemaFromFields(fields: readonly FieldObservation[]): ProposedToolSchema {
+  const usable = fields.filter((field) => !field.excluded);
+  const properties = Object.fromEntries(usable.map((field) => [field.name, propertyFor(field)]));
+  const required = usable.filter((field) => field.required).map((field) => field.name);
+  return {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false,
+  };
+}
+
+function tableSchema(): ProposedToolSchema {
+  return {
+    type: "object",
+    properties: {
+      page: { type: "integer", description: "Page number, starting at 1.", minimum: 1 },
+      limit: { type: "integer", description: "Rows per page, at most 100.", minimum: 1, maximum: 100 },
+    },
+    additionalProperties: false,
+  };
+}
+
+function proposeTool(capability: CapabilityObservation, taken: Set<string>): ProposedTool {
+  const evidenceIds = [capability.id, ...capability.fields.filter((f) => !f.excluded).map((f) => f.id)];
+  if (capability.kind === "table" && capability.table) {
+    const noun = capability.heading;
+    return {
+      name: uniqueName(`read_${slugify(noun)}`, taken),
+      title: `Read ${noun}`,
+      description: `Read rows from the ${noun} table with paging. This tool does not modify state.`,
+      inputSchema: tableSchema(),
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      riskClass: "read",
+      capabilityId: capability.id,
+      evidenceIds,
+      outputColumns: capability.table.headers,
+    };
+  }
+  if (capability.kind === "search") {
+    const noun = objectNoun(capability);
+    return {
+      name: uniqueName(`search_${slugify(noun)}`, taken),
+      title: `Search ${noun}`,
+      description: `Search ${noun} using the ${capability.heading} form. This tool does not modify state.`,
+      inputSchema: schemaFromFields(capability.fields),
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      riskClass: "read",
+      capabilityId: capability.id,
+      evidenceIds,
+    };
+  }
+  const action = capability.actionLabel;
+  return {
+    name: uniqueName(slugify(action), taken),
+    title: action,
+    description: `Submit the "${action}" form on ${capability.heading}. This changes state and is staged for human review before anything final.`,
+    inputSchema: schemaFromFields(capability.fields),
+    annotations: { readOnlyHint: false, untrustedContentHint: true },
+    riskClass: "write",
+    capabilityId: capability.id,
+    evidenceIds,
+  };
+}
+
+export async function inferGenericCapabilities(scan: GenericScanResult): Promise<GenericProposal> {
+  const taken = new Set<string>();
+  const tools: ProposedTool[] = [];
+  const excluded: ExcludedCapability[] = [];
+  for (const capability of scan.capabilities) {
+    if (capability.riskClass === "finalize" || capability.riskClass === "credential") {
+      excluded.push({
+        capabilityId: capability.id,
+        riskClass: capability.riskClass,
+        actionLabel: capability.actionLabel,
+        reason: capability.riskClass === "finalize" ? FINALIZE_REASON : CREDENTIAL_REASON,
+      });
+      continue;
+    }
+    tools.push(proposeTool(capability, taken));
+  }
+  const humanConfirmationBoundary = "outside-tool-surface" as const;
+  const versionHash = await sha256Hex(
+    canonicalJson({ inferenceVersion: INFERENCE_VERSION, tools, excluded, humanConfirmationBoundary }),
+  );
+  const proposalHash = await sha256Hex(
+    canonicalJson({ scanHash: scan.scanHash, versionHash, tools, excluded, humanConfirmationBoundary }),
+  );
+  return deepFreeze({
+    scanHash: scan.scanHash,
+    proposalHash,
+    versionHash,
+    tools,
+    excluded,
+    humanConfirmationBoundary,
+  });
+}

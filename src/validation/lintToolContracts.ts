@@ -8,10 +8,13 @@ import type { BookingToolContract } from "../webmcp/bookingToolContracts";
  * inventory stays stable.
  */
 
-export type LintableToolContract = Pick<
-  BookingToolContract,
-  "name" | "description" | "inputSchema" | "annotations"
->;
+/** Any tool contract shape the lint can check; not limited to the booking tools. */
+export interface LintableToolContract {
+  name: string;
+  description: string;
+  inputSchema: BookingToolContract["inputSchema"];
+  annotations: BookingToolContract["annotations"];
+}
 
 export type ContractLintRuleId =
   | "name-pattern"

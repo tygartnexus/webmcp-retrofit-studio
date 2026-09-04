@@ -2118,3 +2118,137 @@ code,
   color: #8a1f1f;
   font-weight: 650;
 }
+
+/* Fixture picker and generic candidates (preview only) */
+
+.scan-card-body select {
+  min-height: 42px;
+  padding: 9px 11px;
+  color: #213f47;
+  background: #f8faf9;
+  border: 1px solid #cbd9d6;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fixture-note {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+}
+
+.generic-workbench {
+  grid-template-columns: minmax(420px, 1.6fr) minmax(280px, 1fr);
+}
+
+.generic-workbench > section {
+  padding: 14px 16px;
+}
+
+.generic-workbench > section + section {
+  border-left: 1px solid var(--border);
+}
+
+.generic-workbench h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.generic-workbench .candidate-list {
+  padding: 0;
+}
+
+.generic-tool-card h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.generic-tool-card p {
+  margin: 8px 0 0;
+  font-size: 11px;
+}
+
+.risk-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 740;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.risk-read {
+  color: var(--teal-dark);
+  background: var(--teal-soft);
+}
+
+.risk-write {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.risk-finalize,
+.risk-credential {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.parameter-table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+
+.parameter-table th,
+.parameter-table td {
+  padding: 5px 6px;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid var(--border);
+}
+
+.parameter-table th {
+  color: #496269;
+  font-size: 9px;
+  font-weight: 740;
+  text-transform: uppercase;
+  border-top: 0;
+}
+
+.excluded-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.excluded-list li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.excluded-list svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--danger);
+}
+
+.excluded-list strong {
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.excluded-list p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}

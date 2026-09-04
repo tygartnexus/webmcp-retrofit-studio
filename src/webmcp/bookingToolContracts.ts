@@ -1,4 +1,5 @@
 import type { BookingToolName } from "../domain/booking";
+import { deepFreeze } from "../lib/deepFreeze";
 
 export interface BookingToolContract
   extends Omit<WebMCP.ModelContextTool, "execute"> {
@@ -16,15 +17,6 @@ export interface BookingToolContract
   };
 }
 
-function deepFreeze<T>(value: T): T {
-  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
-    return value;
-  }
-  for (const key of Reflect.ownKeys(value)) {
-    deepFreeze((value as Record<PropertyKey, unknown>)[key]);
-  }
-  return Object.freeze(value);
-}
 
 const SERVICE_ID_SCHEMA = deepFreeze({
   type: "string",

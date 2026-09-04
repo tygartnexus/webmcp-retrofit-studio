@@ -27,6 +27,13 @@ import {
   X,
 } from "lucide-react";
 import { BookingPreview, type DraftSource } from "./screens/BookingPreview";
+import { GenericCandidateScreen } from "./screens/GenericCandidates";
+import { GENERIC_FIXTURES } from "./fixtures/genericFixtures";
+import { scanHtml, type GenericScanResult } from "./discovery/scanHtml";
+import {
+  inferGenericCapabilities,
+  type GenericProposal,
+} from "./discovery/inferGenericCapabilities";
 import {
   createWebAuthnPresenceVerifier,
   type HumanPresenceVerifier,
@@ -88,6 +95,27 @@ import {
 } from "./webmcp/bookingToolContracts";
 
 type Screen = "scan" | "candidates" | "preview" | "validate" | "export";
+
+/** The bundled booking fixture drives the full retrofit flow. */
+const BOOKING_SOURCE_ID = "legacy-booking";
+
+interface ScanSource {
+  id: string;
+  title: string;
+}
+
+/** Generic fixtures scan inertly into a preview-only proposal. */
+const SCAN_SOURCES: readonly ScanSource[] = Object.freeze([
+  Object.freeze({ id: BOOKING_SOURCE_ID, title: "Legacy booking (full retrofit flow)" }),
+  ...GENERIC_FIXTURES.map((fixture) =>
+    Object.freeze({ id: fixture.id, title: `${fixture.title} (generic scan, preview only)` }),
+  ),
+]);
+
+interface GenericScanOutcome {
+  scan: GenericScanResult;
+  proposal: GenericProposal;
+}
 type ReviewDecision = "pending" | "approved" | "rejected";
 type RegistrationState =
   | "idle"
@@ -608,15 +636,20 @@ function ScanScreen({
   authorized,
   scanning,
   error,
+  sourceId,
   onAuthorizationChange,
+  onSourceChange,
   onScan,
 }: {
   authorized: boolean;
   scanning: boolean;
   error: string | null;
+  sourceId: string;
   onAuthorizationChange: (authorized: boolean) => void;
+  onSourceChange: (sourceId: string) => void;
   onScan: () => void;
 }) {
+  const bookingSelected = sourceId === BOOKING_SOURCE_ID;
   return (
     <div className="screen-content scan-screen">
       <div className="screen-intro">
@@ -641,9 +674,20 @@ function ScanScreen({
           </div>
           <div className="scan-card-body">
             <label>
-              Fixture URL
-              <input readOnly value="https://legacy-booking.test" />
+              Fixture
+              <select onChange={(event) => onSourceChange(event.target.value)} value={sourceId}>
+                {SCAN_SOURCES.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {source.title}
+                  </option>
+                ))}
+              </select>
             </label>
+            <p className="muted fixture-note">
+              {bookingSelected
+                ? "https://legacy-booking.test"
+                : "Bundled synthetic HTML. The scan proposes tools for review but nothing registers or runs."}
+            </p>
             <label className="authorization-check">
               <input
                 checked={authorized}
@@ -1268,6 +1312,8 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
   const [authorized, setAuthorized] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [sourceId, setSourceId] = useState(BOOKING_SOURCE_ID);
+  const [generic, setGeneric] = useState<GenericScanOutcome | null>(null);
   const [mode, setMode] = useState<ResponseModeId>("accuracy");
   const [decision, setDecision] = useState<ReviewDecision>("pending");
   const [registration, setRegistration] = useState<RegistrationState>("idle");
@@ -1376,32 +1422,46 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
     [],
   );
 
+  const resetDownstream = useCallback(() => {
+    setDecision("pending");
+    setDraft(null);
+    setDraftSource(null);
+    setPresenceReceipt(null);
+    setValidationReport(null);
+    setValidationError(null);
+    setLiveUatRecorded(false);
+    setExportBundle(null);
+    setExportApproved(false);
+    setExportDownloading(false);
+    setExportError(null);
+  }, []);
+
   const handleScan = useCallback(() => {
     if (!authorized || scanning) return;
     exportRequestIdRef.current += 1;
     setScanning(true);
     setScanError(null);
-    void rescanOwnedFixture(workflow)
-      .then((nextWorkflow) => {
-        setWorkflow(nextWorkflow);
-        setDecision("pending");
-        setDraft(null);
-        setDraftSource(null);
-        setPresenceReceipt(null);
-        setValidationReport(null);
-        setValidationError(null);
-        setLiveUatRecorded(false);
-        setExportBundle(null);
-        setExportApproved(false);
-        setExportDownloading(false);
-        setExportError(null);
+    const fixture = GENERIC_FIXTURES.find((candidate) => candidate.id === sourceId);
+    const run = fixture
+      ? scanHtml(fixture).then(async (scan) => {
+          const proposal = await inferGenericCapabilities(scan);
+          setGeneric({ scan, proposal });
+          setWorkflow(createRetrofitWorkflow());
+        })
+      : rescanOwnedFixture(workflow).then((nextWorkflow) => {
+          setGeneric(null);
+          setWorkflow(nextWorkflow);
+        });
+    void run
+      .then(() => {
+        resetDownstream();
         setScreen("candidates");
       })
       .catch(() => {
         setScanError("The inert snapshot scan could not complete; no evidence was retained.");
       })
       .finally(() => setScanning(false));
-  }, [authorized, scanning, workflow]);
+  }, [authorized, resetDownstream, scanning, sourceId, workflow]);
 
   const handleApprove = useCallback(() => {
     if (approved) return;
@@ -1592,10 +1652,19 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
               error={scanError}
               onAuthorizationChange={setAuthorized}
               onScan={handleScan}
+              onSourceChange={setSourceId}
               scanning={scanning}
+              sourceId={sourceId}
             />
           )}
-          {screen === "candidates" && workflow.scan && candidateReviewModel && (
+          {screen === "candidates" && generic && (
+            <GenericCandidateScreen
+              onBack={() => setScreen("scan")}
+              proposal={generic.proposal}
+              scan={generic.scan}
+            />
+          )}
+          {screen === "candidates" && !generic && workflow.scan && candidateReviewModel && (
             <CandidateScreen
               decision={decision}
               mode={mode}

@@ -40,7 +40,22 @@ Tool input is revalidated during execution. Schemas reject additional properties
 
 The confirmation control requires a currently staged draft and displays its exact values before the final step. Confirmation then requires a WebAuthn ceremony on a platform authenticator (touch, biometric, or PIN). Automation that only synthesizes mouse and keyboard input can click the visible button but cannot complete the authenticator prompt, so the draft stays unconfirmed. The app records a PII-free presence receipt (method, ceremony type, the id of the draft the gesture was requested for, relying-party id, user-presence and user-verification flags, a SHA-256 of the credential id, and a timestamp) and carries it into the export evidence. A receipt is bound to the draft shown when the ceremony started; if a tool re-stages a different draft while the authenticator prompt is open, the completed gesture is discarded and the person is asked to review the new draft.
 
-### Customer view
+### Generic scanner (preview only)
+
+The Scan screen offers a fixture picker. The booking fixture runs the full
+retrofit flow. The other fixtures (contact form, catalog search, orders
+table, checkout, login) are scanned inertly by a generic scanner that
+proposes tools for review: read-only tools for searches and tables,
+state-changing tools for ordinary forms, and no tool at all for credential
+entry or finalizing actions such as placing an order. Those exclusions are
+listed with the reason, and finalization stays on the visible page behind the
+presence ceremony.
+
+In this build the generic proposals are preview only. They do not register,
+run, validate, or export. Design notes and the next slices are in
+[docs/design/generic-scanner.md](docs/design/generic-scanner.md).
+
+## Customer view
 
 The five stages are the owner's retrofit, done once per site. Append `?view=customer` to the URL to open the booking page with the reviewed tools already live and no step rail. In that view an agent calls `stage_booking`, the confirmation dialog opens by itself for exactly that draft, and the person's only action is the device gesture. Drafts staged by hand in the visible form still need the explicit Confirm booking click. In this build the customer view shows the full Validate page, including the deterministic checks and the export path; hiding the owner-only sections is deferred.
 
