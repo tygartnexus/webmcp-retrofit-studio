@@ -1236,12 +1236,26 @@ function ExportScreen({
   );
 }
 
+export type AppView = "owner" | "customer";
+
 export interface AppProps {
   /** Test seam; production uses the WebAuthn verifier. */
   presenceVerifier?: HumanPresenceVerifier;
+  /**
+   * Owner view walks the retrofit; customer view opens the booking page with
+   * the reviewed tools already live. Defaults from `?view=customer`.
+   */
+  view?: AppView;
 }
 
-export function App({ presenceVerifier }: AppProps = {}) {
+function defaultView(): AppView {
+  if (typeof location === "undefined") return "owner";
+  return new URLSearchParams(location.search).get("view") === "customer" ? "customer" : "owner";
+}
+
+export function App({ presenceVerifier, view }: AppProps = {}) {
+  const appView = view ?? defaultView();
+  const customerView = appView === "customer";
   const verifier = useMemo(
     () => presenceVerifier ?? createWebAuthnPresenceVerifier(),
     [presenceVerifier],
@@ -1332,6 +1346,26 @@ export function App({ presenceVerifier }: AppProps = {}) {
       disposeRegistration();
     };
   }, [handleDraftStaged, modelContext, runtimeActive]);
+
+  useEffect(() => {
+    if (!customerView) return;
+    let cancelled = false;
+    void rescanOwnedFixture(createRetrofitWorkflow())
+      .then((scanned) => {
+        if (cancelled) return;
+        const ready = createRetrofitPreview(approveCapabilities(scanned, BOOKING_TOOL_NAMES));
+        setWorkflow(ready);
+        setAuthorized(true);
+        setDecision("approved");
+        setScreen("validate");
+      })
+      .catch(() => {
+        if (!cancelled) setScanError("The customer view could not prepare the reviewed tools.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerView]);
 
   const handleLocalStage = useCallback(
     (input: { serviceId: ServiceId; date: string; time: string }) => {
@@ -1532,7 +1566,16 @@ export function App({ presenceVerifier }: AppProps = {}) {
   return (
     <div className="app-shell">
       <AppHeader />
-      <div className="app-body">
+      {customerView && (
+        <div className="customer-banner" role="note">
+          <strong>Customer view.</strong> The owner's retrofit is already applied; an agent stages the
+          draft and you confirm it with one device gesture.{" "}
+          <a href="./">Owner view</a>
+          {scanError && <span className="customer-banner-error"> {scanError}</span>}
+        </div>
+      )}
+      <div className={customerView ? "app-body no-rail" : "app-body"}>
+        {!customerView && (
         <StepRail
           approved={approved}
           onNavigate={navigate}
@@ -1541,6 +1584,7 @@ export function App({ presenceVerifier }: AppProps = {}) {
           screen={screen}
           validated={exportReady}
         />
+        )}
         <main>
           {screen === "scan" && (
             <ScanScreen

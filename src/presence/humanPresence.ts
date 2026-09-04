@@ -79,6 +79,14 @@ export interface WebAuthnPresenceOptions {
   rpId?: string;
   /** WebAuthn refuses insecure origins; defaults to `window.isSecureContext`. */
   secureContext?: boolean;
+  /**
+   * Remember the registered credential id in browser storage so later visits
+   * need one prompt instead of two. Off by default; the id is not a secret, but
+   * persisting it is a product choice the owner should make deliberately.
+   */
+  persistCredential?: boolean;
+  /** Override for tests; defaults to `localStorage` when persistence is on. */
+  storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }
 
 const FLAG_USER_PRESENT = 0x01;
@@ -86,6 +94,27 @@ const FLAG_USER_VERIFIED = 0x04;
 const FLAGS_BYTE_OFFSET = 32;
 const MIN_AUTHENTICATOR_DATA_LENGTH = 37;
 const CEREMONY_TIMEOUT_MS = 60_000;
+const STORAGE_KEY = "webmcp-retrofit:presence-credential";
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBuffer(hex: string): ArrayBuffer | null {
+  if (!/^[a-f0-9]+$/.test(hex) || hex.length % 2 !== 0) return null;
+  const buffer = new ArrayBuffer(hex.length / 2);
+  const view = new Uint8Array(buffer);
+  for (let i = 0; i < view.length; i += 1) view[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return buffer;
+}
+
+function defaultStorage(): WebAuthnPresenceOptions["storage"] | undefined {
+  try {
+    return typeof localStorage === "undefined" ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 export function parseAuthenticatorFlags(data: ArrayBuffer): AuthenticatorFlags {
   const bytes = new Uint8Array(data);
@@ -217,7 +246,25 @@ export function createWebAuthnPresenceVerifier(
   const relyingPartyName = options.relyingPartyName ?? "WebMCP Retrofit Studio";
   const rpId = options.rpId ?? defaultRpId();
   const secureContext = options.secureContext ?? defaultSecureContext();
+  const storage = options.persistCredential ? (options.storage ?? defaultStorage()) : undefined;
   let registeredId: ArrayBuffer | null = null;
+  try {
+    const remembered = storage?.getItem(STORAGE_KEY);
+    if (remembered) registeredId = hexToBuffer(remembered);
+  } catch {
+    registeredId = null;
+  }
+
+  function remember(id: ArrayBuffer | null): void {
+    registeredId = id;
+    if (!storage) return;
+    try {
+      if (id) storage.setItem(STORAGE_KEY, bytesToHex(new Uint8Array(id)));
+      else storage.removeItem(STORAGE_KEY);
+    } catch {
+      // Storage can be unavailable or full; the in-memory id still works.
+    }
+  }
 
   async function register(container: CredentialsContainer): Promise<CeremonyOutcome> {
     const challenge = randomBytes(crypto, 32);
@@ -264,12 +311,12 @@ export function createWebAuthnPresenceVerifier(
       try {
         return await assert(container, registeredId);
       } catch (error) {
-        registeredId = null;
+        remember(null);
         throw error;
       }
     }
     const outcome = await register(container);
-    registeredId = outcome.result.rawId;
+    remember(outcome.result.rawId);
     return outcome;
   }
 
@@ -293,12 +340,12 @@ export function createWebAuthnPresenceVerifier(
         outcome = await runCeremony(container);
         assertChallengeEcho(outcome.result, outcome.challenge);
       } catch (error) {
-        registeredId = null;
+        remember(null);
         throw toVerificationError(error);
       }
       const flags = parseAuthenticatorFlags(outcome.result.authenticatorData);
       if (!flags.userPresent) {
-        registeredId = null;
+        remember(null);
         throw new PresenceVerificationError(
           "presence-not-reported",
           "The authenticator did not report user presence",

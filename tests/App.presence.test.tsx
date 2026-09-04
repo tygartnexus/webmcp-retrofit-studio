@@ -63,7 +63,7 @@ describe("human presence gate on finalization", () => {
     const dialog = await stageOnValidate(user);
 
     expect(screen.queryByText(/Confirmed with verified human presence/)).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Verify presence and confirm" }));
+    await user.click(within(dialog).getByRole("button", { name: "Confirm with passkey" }));
 
     expect(verifier.calls).toBe(1);
     expect(verifier.subjects).toEqual(["draft-consultation-2026-09-03-1000"]);
@@ -84,7 +84,7 @@ describe("human presence gate on finalization", () => {
     render(<App presenceVerifier={verifier} />);
     const dialog = await stageOnValidate(user);
 
-    await user.click(within(dialog).getByRole("button", { name: "Verify presence and confirm" }));
+    await user.click(within(dialog).getByRole("button", { name: "Confirm with passkey" }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/cancelled/i);
     expect(within(dialog).getByRole("alert")).toHaveTextContent(/stays unconfirmed/i);
@@ -99,7 +99,7 @@ describe("human presence gate on finalization", () => {
     const dialog = await stageOnValidate(user);
 
     expect(within(dialog).getByRole("alert")).toHaveTextContent(/unavailable/i);
-    expect(within(dialog).getByRole("button", { name: "Verify presence and confirm" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Confirm with passkey" })).toBeDisabled();
     expect(verifier.calls).toBe(0);
   });
 
@@ -108,14 +108,14 @@ describe("human presence gate on finalization", () => {
     render(<App />);
     const dialog = await stageOnValidate(user);
 
-    expect(within(dialog).getByRole("button", { name: "Verify presence and confirm" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Confirm with passkey" })).toBeDisabled();
   });
 
   it("clears the receipt when the draft changes", async () => {
     const user = userEvent.setup();
     render(<App presenceVerifier={verifierThat(async (subject) => receiptFor(subject))} />);
     const dialog = await stageOnValidate(user);
-    await user.click(within(dialog).getByRole("button", { name: "Verify presence and confirm" }));
+    await user.click(within(dialog).getByRole("button", { name: "Confirm with passkey" }));
     await screen.findByRole("status");
 
     await user.selectOptions(screen.getByLabelText("Service"), "repair");
@@ -144,7 +144,7 @@ describe("human presence gate on finalization", () => {
     try {
       render(<App presenceVerifier={verifier} />);
       const dialog = await stageOnValidate(user);
-      await user.click(within(dialog).getByRole("button", { name: "Verify presence and confirm" }));
+      await user.click(within(dialog).getByRole("button", { name: "Confirm with passkey" }));
       expect(verifier.subjects).toEqual(["draft-consultation-2026-09-03-1000"]);
 
       await act(async () => {
@@ -153,11 +153,18 @@ describe("human presence gate on finalization", () => {
           { signal: new AbortController().signal },
         );
       });
+      // While the gesture is in flight the dialog keeps showing the draft being confirmed.
+      expect(within(dialog).getByText("Consultation")).toBeInTheDocument();
+      expect(within(dialog).queryByText("Repair")).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "Waiting for your device" })).toBeDisabled();
+
       await act(async () => {
         release("draft-consultation-2026-09-03-1000");
       });
 
       expect(screen.queryByText(/Confirmed with verified human presence/)).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(/draft changed/i);
+      expect(within(dialog).getByText("Repair")).toBeInTheDocument();
       expect(screen.getByText("Staged by tool")).toBeInTheDocument();
     } finally {
       delete (document as { modelContext?: unknown }).modelContext;

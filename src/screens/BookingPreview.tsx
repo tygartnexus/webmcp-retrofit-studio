@@ -1,5 +1,5 @@
 import { CheckCircle2, ClipboardCheck, Fingerprint, LockKeyhole } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAvailability,
   type BookingDraft,
@@ -86,9 +86,12 @@ export function BookingPreview({
   const [date, setDate] = useState(draft?.date ?? "2026-09-03");
   const [time, setTime] = useState(draft?.time ?? "10:00");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [displayDraft, setDisplayDraft] = useState<BookingDraft | null>(draft);
   const [ceremony, setCeremony] = useState<CeremonyState>({ phase: "idle" });
   const dialogRef = useRef<HTMLDialogElement>(null);
   const latestDraftId = useRef<string | null>(draft?.id ?? null);
+  const latestDraft = useRef<BookingDraft | null>(draft);
+  const verifying = useRef(false);
   const confirmTriggerRef = useRef<HTMLButtonElement>(null);
   const cancelDialogRef = useRef<HTMLButtonElement>(null);
   const availability = useMemo(() => getAvailability({ serviceId }), [serviceId]);
@@ -100,14 +103,25 @@ export function BookingPreview({
   const matchesDraft =
     draft?.serviceId === serviceId && draft.date === date && draft.time === time;
 
+  const syncToDraft = useCallback((next: BookingDraft, source: DraftSource | null) => {
+    setServiceId(next.serviceId);
+    setDate(next.date);
+    setTime(next.time);
+    setDisplayDraft(next);
+    // An agent staging a draft opens the confirmation so the person's only
+    // action is the gesture. Visible-UI staging keeps the explicit click.
+    setDialogOpen(source === "tool");
+  }, []);
+
   useEffect(() => {
     latestDraftId.current = draft?.id ?? null;
+    latestDraft.current = draft;
     if (!draft) return;
-    setServiceId(draft.serviceId);
-    setDate(draft.date);
-    setTime(draft.time);
-    setDialogOpen(false);
-  }, [draft]);
+    // While a gesture is in flight the dialog keeps showing the draft the
+    // person is confirming; the new draft is applied once the ceremony settles.
+    if (verifying.current) return;
+    syncToDraft(draft, draftSource);
+  }, [draft, draftSource, syncToDraft]);
 
   useDialogSync(dialogOpen, dialogRef, cancelDialogRef);
 
@@ -143,6 +157,7 @@ export function BookingPreview({
     if (ceremony.phase === "verifying" || !draft || !matchesDraft) return;
     const subject = draft.id;
     setCeremony({ phase: "verifying" });
+    verifying.current = true;
     try {
       const receipt = await presenceVerifier.verify(subject);
       if (receipt.subject !== subject || latestDraftId.current !== subject) {
@@ -153,6 +168,10 @@ export function BookingPreview({
       closeConfirmation();
     } catch (error) {
       setCeremony({ phase: "failed", message: describeFailure(error) });
+    } finally {
+      verifying.current = false;
+      const current = latestDraft.current;
+      if (current && current.id !== subject) syncToDraft(current, "tool");
     }
   };
 
@@ -176,7 +195,7 @@ export function BookingPreview({
           </div>
         </div>
         <p className="preview-helper">
-          An agent may prepare this draft. A person verifies presence and confirms it here.
+          An agent prepares the draft. You confirm it with one device gesture.
         </p>
         <label>
           Service
@@ -261,8 +280,7 @@ export function BookingPreview({
           </p>
         )}
         <p className="human-boundary-copy">
-          This visible control is not registered as a WebMCP tool. Confirmation requires a
-          WebAuthn presence ceremony that no tool can perform.
+          Not a WebMCP tool. Confirmation needs a device gesture no agent can perform.
         </p>
         <dialog
           aria-labelledby="confirm-dialog-heading"
@@ -284,18 +302,17 @@ export function BookingPreview({
           }}
           ref={dialogRef}
         >
-          {draft && matchesDraft && (
+          {displayDraft && (ceremony.phase === "verifying" || matchesDraft) && (
             <>
               <h3 id="confirm-dialog-heading">Confirm staged booking</h3>
               <p>
-                <strong>{draft.serviceName}</strong>
+                <strong>{displayDraft.serviceName}</strong>
                 <span>
-                  {draft.date} at {draft.time}
+                  {displayDraft.date} at {displayDraft.time}
                 </span>
               </p>
               <p className="presence-copy">
-                <Fingerprint size={16} /> Your browser will ask for a touch, biometric, or PIN.
-                Only a completed gesture confirms this draft.
+                <Fingerprint size={16} /> Touch, face, or PIN on this device confirms the draft.
               </p>
               {!presenceVerifier.available && (
                 <p className="presence-error" role="alert">
@@ -317,7 +334,7 @@ export function BookingPreview({
                   onClick={() => void verifyAndConfirm()}
                   type="button"
                 >
-                  {ceremony.phase === "verifying" ? "Verifying presence" : "Verify presence and confirm"}
+                  {ceremony.phase === "verifying" ? "Waiting for your device" : "Confirm with passkey"}
                 </button>
               </div>
             </>

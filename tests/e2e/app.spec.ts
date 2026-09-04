@@ -5,7 +5,10 @@ async function installWebMcpStub(page: import("@playwright/test").Page) {
     Object.defineProperty(document, "modelContext", {
       configurable: true,
       value: {
-        async registerTool() {},
+        async registerTool(tool: { name: string }) {
+          (window as unknown as { __tools: Map<string, unknown> }).__tools ??= new Map();
+          (window as unknown as { __tools: Map<string, unknown> }).__tools.set(tool.name, tool);
+        },
       },
     });
   });
@@ -104,7 +107,7 @@ test("finalization requires a real WebAuthn presence ceremony", async ({ page, b
 
   const dialog = page.getByRole("dialog", { name: "Confirm staged booking" });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Verify presence and confirm" }).click();
+  await dialog.getByRole("button", { name: "Confirm with passkey" }).click();
 
   const status = page.getByRole("status");
   await expect(status).toContainText("Confirmed with verified human presence");
@@ -118,4 +121,41 @@ test("finalization requires a real WebAuthn presence ceremony", async ({ page, b
     body: await page.screenshot(),
     contentType: "image/png",
   });
+});
+
+
+test("customer view: the agent stages the draft and the person confirms with one gesture", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "virtual authenticator needs the Chromium CDP WebAuthn domain");
+  await installWebMcpStub(page);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  await page.goto("/?view=customer");
+  await expect(page.getByRole("heading", { name: "Validate generated tools" })).toBeVisible();
+  await expect(page.getByRole("note")).toContainText("Customer view");
+  await expect(page.getByText("3 live tools registered").first()).toBeVisible();
+
+  await page.evaluate(async () => {
+    const tools = (window as unknown as { __tools: Map<string, { execute: (i: unknown, o: unknown) => unknown }> }).__tools;
+    await tools.get("stage_booking")!.execute(
+      { serviceId: "repair", date: "2026-09-05", time: "14:30" },
+      { signal: new AbortController().signal },
+    );
+  });
+
+  const dialog = page.getByRole("dialog", { name: "Confirm staged booking" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Repair");
+  await dialog.getByRole("button", { name: "Confirm with passkey" }).click();
+  await expect(page.getByRole("status")).toContainText("Confirmed with verified human presence");
+  await expect(dialog).toBeHidden();
 });

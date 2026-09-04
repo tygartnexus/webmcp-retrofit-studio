@@ -220,3 +220,69 @@ describe("WebAuthn presence verifier", () => {
     expect(calls).toEqual(["create", "get", "create"]);
   });
 });
+
+describe("credential persistence option", () => {
+  function fakeStorage() {
+    const map = new Map<string, string>();
+    return {
+      map,
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    };
+  }
+
+  it("is off by default and stores nothing", async () => {
+    const storage = fakeStorage();
+    const { container } = fakeCredentials();
+    await createWebAuthnPresenceVerifier({
+      credentials: container,
+      rpId: "example.test",
+      secureContext: true,
+      storage,
+    }).verify("draft-repair-2026-09-05-1430");
+    expect(storage.map.size).toBe(0);
+  });
+
+  it("remembers the credential so a later visit needs one assertion instead of a registration", async () => {
+    const storage = fakeStorage();
+    const first = fakeCredentials();
+    const receipt = await createWebAuthnPresenceVerifier({
+      credentials: first.container,
+      rpId: "example.test",
+      secureContext: true,
+      persistCredential: true,
+      storage,
+    }).verify("draft-repair-2026-09-05-1430");
+    expect(first.calls).toEqual(["create"]);
+    expect(storage.map.size).toBe(1);
+    expect([...storage.map.values()][0]).not.toContain(receipt.credentialIdSha256);
+
+    const later = fakeCredentials();
+    const second = await createWebAuthnPresenceVerifier({
+      credentials: later.container,
+      rpId: "example.test",
+      secureContext: true,
+      persistCredential: true,
+      storage,
+    }).verify("draft-repair-2026-09-05-1430");
+    expect(later.calls).toEqual(["get"]);
+    expect(second.ceremony).toBe("assertion");
+  });
+
+  it("forgets the credential after a failed assertion", async () => {
+    const storage = fakeStorage();
+    storage.setItem("webmcp-retrofit:presence-credential", "01020304");
+    const failing = fakeCredentials({ getError: new DOMException("gone", "NotAllowedError") });
+    await expect(
+      createWebAuthnPresenceVerifier({
+        credentials: failing.container,
+        rpId: "example.test",
+        secureContext: true,
+        persistCredential: true,
+        storage,
+      }).verify("draft-repair-2026-09-05-1430"),
+    ).rejects.toMatchObject({ reason: "cancelled" });
+    expect(storage.map.size).toBe(0);
+  });
+});

@@ -2094,3 +2094,27 @@ code,
   opacity: 0.85;
   word-break: break-all;
 }
+
+.customer-banner {
+  margin: 12px 24px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #e6f4f1;
+  color: #0d2e39;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.customer-banner a {
+  margin-left: 6px;
+  font-weight: 650;
+}
+
+.app-body.no-rail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.customer-banner-error {
+  color: #8a1f1f;
+  font-weight: 650;
+}

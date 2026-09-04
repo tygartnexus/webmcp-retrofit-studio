@@ -176,7 +176,7 @@ describe("Retrofit Studio workbench", () => {
     expect(within(dialog).getByText("Consultation")).toBeInTheDocument();
     expect(within(dialog).getByText("2026-09-03 at 10:00")).toBeInTheDocument();
     await user.click(
-      within(dialog).getByRole("button", { name: "Verify presence and confirm" }),
+      within(dialog).getByRole("button", { name: "Confirm with passkey" }),
     );
     expect(await screen.findByText(/Confirmed with verified human presence/)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("presence only");
