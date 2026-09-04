@@ -31,7 +31,12 @@ The owner must confirm all of the following for the exact final source, descript
 - Dependencies, SDKs, APIs, data, and technical assistance comply with applicable licenses and terms.
 - No submitted material violates copyright, trademark, patent, contract, privacy, publicity, confidentiality, or other rights.
 - No third-party personal information, trade secret, credential, malicious code, or disabling device is included.
-- The Microsoft Mark synthesized narration output is authorized for this public promotional use, or it will be replaced with narration for which the entrant has documented rights.
+- The direct ElevenLabs `eleven_v3` George narration output (voice ID `JBFqnCBsd6RMkjVDRZzb`) in the exact v4 candidate is authorized for this public promotional use, or it will be replaced with narration for which the entrant has documented rights.
+- The three included Higgsfield-generated Seedance connective-motion source clips and any source styleframes are authorized for this public promotional use.
+- The rendered use of Metropolis ExtraBold and Montserrat ExtraBold is authorized for this public promotional use, or those fonts will be replaced with verified licensed alternatives.
+- The current v4 film uses a narration-only mix with no ambient bed, music, generated noise, third-party recording, or sampled noise.
+- The owner has listened to the complete v4 candidate on headphones and approves the voice's subjective naturalness and inflection consistency and the absence of objectionable background noise. Deterministic acoustic measurements do not establish those subjective qualities.
+- The final YouTube altered/synthetic-content disclosure setting accurately describes the Higgsfield-generated connective motion and is approved as part of the exact upload payload.
 - The unresolved local accepted-design reference PNGs remain excluded from the repository, video, thumbnail, screenshots, and Devpost upload. Rights to redistribute excluded files are not asserted or required by this packet.
 
 ## Contractual acknowledgement
@@ -62,7 +67,12 @@ Other challenge submissions: None / list
 Sponsor or Administrator financial/preferential support: None / disclose privately
 Outside contributors or contractors: None / list with ownership evidence
 Submitted-material ownership, permissions, privacy, and non-infringement attestations: Yes/No
-Microsoft Mark narration output authorized for this use: Yes/No/Replace
+ElevenLabs eleven_v3 George narration output authorized for this use: Yes/No/Replace
+Three included Higgsfield Seedance clips and any source styleframes authorized for this use: Yes/No/Replace
+Rendered Metropolis and Montserrat font output authorized for this use: Yes/No/Replace
+Exact v4 video SHA-256 8227bb22efcbde2743cb3cfd1461b07456759b1213d01f7cb2a656edf15cbf46 and thumbnail SHA-256 f38f8d746b08b7d4039eadf93c3deec6e82d4fa18a60c2ea4f4ebe78203ef2a1 reviewed: Yes/No
+Complete v4 candidate reviewed on headphones for naturalness, inflection consistency, and objectionable noise: Yes/No/Replace
+YouTube altered/synthetic-content disclosure setting reviewed and approved: Yes/No
 Excluded local design references reconfirmed absent from final payload: Yes/No
 Current Official Rules, Devpost Terms, and Privacy Policy personally reviewed and accepted: Yes/No
 Authorize Devpost registration/Join and draft staging after exact field review: Yes/No

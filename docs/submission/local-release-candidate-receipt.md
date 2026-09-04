@@ -2,7 +2,7 @@
 
 ## Verdict
 
-**The local release candidate is verified. The public repository, Pages deployment, and public WebMCP UAT subsequently passed, while final submission remains blocked by entrant/legal, video/channel, Devpost-access, exact-payload, and final-submit gates.** The local verification below remains bound to its recorded build; later public evidence does not turn an untested change into a verified application revision.
+**The v4 local release candidate passes deterministic technical verification and independent media review at 92/100, while owner headphone review remains pending. The public repository, Pages deployment, and public WebMCP UAT subsequently passed, while final submission remains blocked by entrant/legal, video/channel, Devpost-access, exact-payload, and final-submit gates.** The local verification below remains bound to its recorded build; later public evidence does not turn an untested change into a verified application revision.
 
 ## Reviewed product
 
@@ -15,7 +15,7 @@
 
 ## Clean verification receipt
 
-Command executed on September 2, 2026 at approximately 05:59 UTC:
+Command re-executed on September 2, 2026 at approximately 20:23 UTC:
 
 ```text
 npm run verify
@@ -60,7 +60,7 @@ Screenshot SHA-256 digests:
 | `candidates-mobile.png` | `c483f57f2f259b9a5183e83dccc2b17ba43e26a92968040f4b505014f39ad44b` |
 | `validate-public-uat.png` | `ed5485e44460fb2190a402cb4deb712ea13b1a3433e165fa0d360a95d69ad013` |
 
-## Narrated layout draft
+## Rejected narrated layout draft
 
 - Local file: `artifacts/demo/webmcp-retrofit-demo-draft.mp4` (ignored by version control)
 - SHA-256: `d141b41e214657c0009001ee30f09d714b8f9355b21caee2636821b773a98fc5`
@@ -73,7 +73,7 @@ Screenshot SHA-256 digests:
 
 This is a watermarked layout/timing draft. Its capture script injects a WebMCP test double, so it is not the live-public-UAT recording required for upload and must not be uploaded as the public submission video. The final take remains bound to the deployed revision and real live-client calls.
 
-## Public-video candidate (local and unapproved)
+## Rejected prior public-video candidate
 
 - Local file: `artifacts/demo/webmcp-retrofit-demo-public-candidate.mp4` (ignored by version control)
 - SHA-256: `acea84d72834dbb711740a0132944b74675e36ede38e4a075e8eb31813961379`
@@ -87,7 +87,64 @@ This is a watermarked layout/timing draft. Its capture script injects a WebMCP t
 - Captured live-trace SHA-256: `0e460572193891a73a58b15eb96225e0390594efd9ecc6be5063ab8dd6109d2a`
 - Source binding: public application captures and live WebMCP trace from commit `291cc98d3efca19e1db9fbdf7493a37d05275902`
 
-The contact sheet and final thumbnail were inspected at native resolution. No private desktop, browser chrome, account identifier, credential, notification, unrelated content, music, or third-party media was observed. The live-call side panel is explicitly labeled as captured evidence and is not represented as native site UI. This candidate is not authorized for upload and is not public evidence until the owner approves the exact file, voice, channel, metadata, audience/disclosure settings, and Public visibility, followed by signed-out playback readback.
+This candidate was rejected by the owner. It is retained only as historical evidence and must not be uploaded or represented as the current launch film.
+
+## Superseded v2 launch-film candidate (private and unapproved)
+
+- Local file: `artifacts/demo-v2/exports/webmcp-retrofit-launch-v2.mp4`
+- SHA-256: `66b3434fcbc7f10813f3d7dddc7966c573a74d3e161d723e33e9fda8957121a4`
+- Size: `64,178,728` bytes
+- Duration: `105.235352` seconds (`105.236` rounded)
+- Video: H.264, yuv420p, 1920 x 1080, 30 fps
+- Audio: AAC, stereo, 48 kHz; ElevenLabs Ainsley narration through Higgsfield plus a deterministic procedural ambient bed
+- Measured audio: `-14.0 LUFS` integrated loudness, `2.3 LU` loudness range, `-1.2 dBFS` true peak
+- Captions: embedded English `mov_text` track plus authored SRT; maximum line length 41 characters and maximum reading speed 18.966 characters per second, including spaces, after the final remux
+- Thumbnail: `artifacts/demo-v2/exports/webmcp-retrofit-launch-v2-thumbnail.jpg`, SHA-256 `49b93a30b7c8a5586e8dc087c43bddb7726d52d73078e2bd33ff18aa5ba81b6b`
+- Continuous public-page recording: `artifacts/demo-v2/live-capture/webmcp-live-uat-15s.mp4`, SHA-256 `f32ab0807ad2431eba001995e2ad21f1a80220b961c316b41cce90a0b87fee4f`
+- Synchronized capture receipt: `artifacts/demo-v2/live-capture/run-20260902-01/capture-session.json`, SHA-256 `291d849015f04be6c66fb0ef1aefe1d9e83d7b87e2786535f3648f1b06ba6531`
+- Source binding: public application commit `291cc98d3efca19e1db9fbdf7493a37d05275902`
+
+The visual contact sheet, thumbnail, live sequence, visible postcondition, and ending frame were inspected. No private desktop, account chrome, credential, personal information, unrelated content, or third-party recording/sample was observed. The film distinguishes generated connective motion from product evidence and labels the read-only overlay as a receipt summary. This v2 candidate is retained only as superseded historical evidence. It is not authorized for upload and must not be represented as the current launch film.
+
+## Superseded v3 launch-film candidate (private and unapproved)
+
+- Local file: `artifacts/demo-v3/exports/webmcp-retrofit-launch-v3.mp4`
+- SHA-256: `e761200be7734c97d450cce5e6f9abac80cd276145ecf943ad1558b37649e7bc`
+- Size: `49,317,888` bytes
+- Measured container duration: `110.739323` seconds; authored timeline: `3,322` frames at 30 fps (`110.733333` seconds)
+- Video: H.264, yuv420p, 1920 x 1080, 30 fps
+- Audio: AAC, stereo, 48 kHz; direct ElevenLabs `eleven_v3` narration using George (`JBFqnCBsd6RMkjVDRZzb`) as one continuous take, stability `0.5`, seed `20260903`
+- Mix: narration only, with no ambient bed, music, generated noise, or sampled noise; measured at `-16.5 LUFS` integrated loudness, `2.6 LU` loudness range, and `-4.4 dBTP` true peak
+- Captions: embedded English `mov_text` track plus authored SRT; 43 cues covering the exact 214-word transcript, no overlaps, maximum line length 42 characters, and maximum reading speed 19.4 characters per second
+- Visual behavior: screenshot-derived product shots use fixed framing and remain static; only the abstract connective transitions and genuine continuous public-page WebMCP UAT sequence remain moving
+- Thumbnail: `artifacts/demo-v3/exports/webmcp-retrofit-launch-v3-thumbnail.jpg`, SHA-256 `49b93a30b7c8a5586e8dc087c43bddb7726d52d73078e2bd33ff18aa5ba81b6b`
+- Contact sheet: `artifacts/demo-v3/exports/webmcp-retrofit-launch-v3-contact-sheet.jpg`, SHA-256 `825132f9988671843fb39aa9fac3dcd067dd4fe7d784f1d155bff50062653d8e`
+- Reused v2 live-capture source evidence: `artifacts/demo-v2/live-capture/webmcp-live-uat-15s.mp4`, SHA-256 `f32ab0807ad2431eba001995e2ad21f1a80220b961c316b41cce90a0b87fee4f`
+- Source binding: public application commit `291cc98d3efca19e1db9fbdf7493a37d05275902`
+
+The v3 MP4, thumbnail, contact sheet, static screenshot framing, moving live-UAT sequence, audio, and captions were inspected and hash-bound. No public upload was performed. This candidate is superseded by v4, remains private historical evidence, and must not be uploaded or represented as the current launch film.
+
+## Current v4 launch-film candidate (private and unapproved)
+
+- Captioned local file: `artifacts/demo-v4/exports/webmcp-retrofit-launch-v4.mp4`; `17,208,163` bytes; SHA-256 `8227bb22efcbde2743cb3cfd1461b07456759b1213d01f7cb2a656edf15cbf46`
+- Clean master: `artifacts/demo-v4/exports/webmcp-retrofit-launch-v4-clean.mp4`; `30,949,872` bytes; SHA-256 `18035ab1b7d59a851846818b4d6f77ba1bceeff35a1d1002465ccda1a79e1145`
+- Measured duration and timeline: `93.533333` seconds, `2,806` constant-frame-rate frames at 30 fps
+- Video: H.264, yuv420p, 1920 x 1080, square pixels, TV-range BT.709 color metadata
+- Audio: AAC, stereo, 48 kHz; direct ElevenLabs `eleven_v3` George narration (`JBFqnCBsd6RMkjVDRZzb`) from one continuous take
+- Mix: narration only; measured at `-16.5 LUFS` integrated loudness, `2.6 LU` loudness range, and `-4.4 dBTP` true peak
+- Captions: 45 cues burned into the captioned MP4, with no subtitle stream; the exact 179-word SRT has SHA-256 `dad7d3f6b511c474ccc4a8db29c8389233b928a979a97e9e07cbf76b7e2cfb3d`, alignment similarity `0.9187675`, maximum measured word-start drift `0.628` seconds, and no single-word cues
+- Static-product verification: minimum measured SSIM `0.994867` and minimum PSNR `46.116` dB across the static checks
+- Live evidence: the genuine continuous public-page WebMCP capture runs for 15.5 seconds and retains 28 unique sampled frame hashes; its synchronized receipt is visible, and no simulated cursor was added
+- Generated footage boundary: connective motion is visibly disclosed and is not represented as product UI or invocation evidence
+- Thumbnail: `artifacts/demo-v4/exports/webmcp-retrofit-launch-v4-thumbnail.jpg`; `127,930` bytes; SHA-256 `f38f8d746b08b7d4039eadf93c3deec6e82d4fa18a60c2ea4f4ebe78203ef2a1`
+- Contact sheet: `artifacts/demo-v4/exports/webmcp-retrofit-launch-v4-contact-sheet.jpg`; `67,893` bytes; SHA-256 `81af5225c38f92978f59d51041b1137c4ac82119a028088a310f9ecd16117260`
+- Render/QC receipt bundle: `artifacts/demo-v4/exports/webmcp-retrofit-launch-v4-receipts.zip`; `262,841` bytes; SHA-256 `6c1223f520f59f4c3e3dd40c81a54987d07edc9bc2c6f04ef2de4f07689d1eff`
+- Independent review report: `artifacts/demo-v4/qc/independent-video-review.md`; `5,057` bytes; SHA-256 `7170604b1935f5fbca011250333309c0b0a3286c853200df5548518426512f5b`; verdict `92/100 — internal-review-ready, not publish-ready`, with no release-blocking MP4 defect found
+- Reused live-capture source evidence: `artifacts/demo-v2/live-capture/webmcp-live-uat-15s.mp4`, SHA-256 `f32ab0807ad2431eba001995e2ad21f1a80220b961c316b41cce90a0b87fee4f`
+- Source binding: public application commit `291cc98d3efca19e1db9fbdf7493a37d05275902`
+- Re-rendered on September 3, 2026 to fix the shot 18 subtitle (`2 30 PM` became `2:30 PM`, render script line 150) in the same Higgsfield sandbox with the same fonts and hash-checked inputs. The pre-fix outputs (video `22577c6803f26af411b7aaf6ae3845c52a612f6f6dd14eb2a45026820f545ffb`, clean master `8901048796d1a68c8b478e001614a4ed941321a19d2ac7b8d7f33985ac51c5ce`, receipt bundle `2f5984700ea3930875ddd71bdf1c11114822d7c5839ce9ef2bd22c4c2132d5bf`) are superseded and retained under `artifacts/demo-v4/superseded-2026-09-03-title-typo/`. Thumbnail and contact sheet are byte-identical. The independent 92/100 verdict was issued on the pre-fix hash; the objective gates were re-executed on the current file and recorded in the report's re-render addendum, while the subjective findings are carried forward without a second independent review.
+
+The v4 files and deterministic render checks are hash-bound. An independent full-timeline review scored the exact file 92/100, found no release-blocking defect in the MP4 itself, and classified it as internal-review-ready but not publish-ready. Acoustic tooling and independent technical review do not establish subjective naturalness, consistent inflection, or freedom from faint objectionable noise during speech. The owner must listen to the complete candidate on headphones before approving it. No public upload has been performed. Publication remains gated on that human review; owner confirmation of narration, Higgsfield-generated-motion and rendered-font rights; approval of the exact MP4, thumbnail, YouTube channel, title, description, audience and altered/synthetic-content disclosure settings, and Public visibility; and a signed-out playback readback after upload.
 
 ## Subsequent public release state
 
@@ -106,7 +163,11 @@ The owner approved the exact public repository, MIT identity, and zero-cost Page
 
 1. Entrant type, eligibility, team/organization representative, original-work/ownership, and work-period attestations.
 2. Reconfirm that unresolved local design references remain excluded from the final repository, media, and Devpost payload.
-3. Final narration voice, video file, thumbnail, YouTube channel, title, audience, and Public visibility.
+3. Owner end-to-end headphone review, final narration voice, exact v4 video and thumbnail hashes, YouTube channel, title, description, audience and altered/synthetic-content disclosure settings, and Public visibility. Independent v4 review is complete at 92/100 with no MP4 release-blocking defect found.
 4. Exact Devpost payload and final Submit approval.
 
 Any change to source, hashes, public accounts, license, deployment, video, or submission copy invalidates the corresponding receipt and requires fresh verification.
+
+## Submission execution, September 3, 2026
+
+The owner approved the re-rendered v4 film in chat, YouTube `https://youtu.be/SgSKDHcvb88` was published Public on the Tygart Nexus channel and read back signed out (HTTP 200, playable, not private, not unlisted), and Devpost entry `https://devpost.com/software/webmcp-retrofit-studio` was submitted to The WebMCP Challenge as Individual, United States, New, on the owner's "tick and submit" instruction. Signed-out Devpost readback confirmed the public page, the submitted-to label, both links, and the Built with list. See the submission record in `submission-checklist.md` for the exact sequence, timestamps, and the attestations that were not separately stated.

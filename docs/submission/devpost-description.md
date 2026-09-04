@@ -58,7 +58,9 @@ The app also includes an Accuracy, Evidence, and Honest Feedback framework. Six 
 | Text description | Ready for owner review |
 | Working live URL | Verified: `https://tygartnexus.github.io/webmcp-retrofit-studio/` |
 | Public open-source repository URL | Verified: `https://github.com/tygartnexus/webmcp-retrofit-studio` with provider-detected MIT License |
-| Public YouTube demo URL | Local compliant candidate prepared; pending exact owner/channel approval, upload, and public readback |
+| Public YouTube demo URL | Published Public and read back signed out: `https://youtu.be/SgSKDHcvb88` |
 | Live WebMCP UAT evidence | Passed against application commit `291cc98d3efca19e1db9fbdf7493a37d05275902`; see `docs/evidence/public-webmcp-uat-2026-09-02.md` |
 
-The remaining video status is a release fact, not a missing text field. The verified application and repository URLs must be copied exactly, and the public YouTube URL must be added only after signed-out playback and audio readback.
+The designated private candidate is `artifacts/demo-v4/exports/webmcp-retrofit-launch-v4.mp4` (SHA-256 `8227bb22efcbde2743cb3cfd1461b07456759b1213d01f7cb2a656edf15cbf46`). V2 and v3 are superseded historical candidates. The remaining video status is a release fact, not a missing text field: v4 is not publish-ready until the listed rights, human review, exact-payload approval, upload, and public readback gates pass. The verified application and repository URLs must be copied exactly, and the public YouTube URL must be added only after signed-out playback and audio readback.
+
+Devpost entry submitted September 3, 2026: `https://devpost.com/software/webmcp-retrofit-studio`.
