@@ -77,7 +77,7 @@ export const STAGE_BOOKING_TOOL_CONTRACT = deepFreeze({
   name: "stage_booking",
   title: "Stage booking draft",
   description:
-    "Create or replace a reversible local booking draft. Final confirmation remains on the visible interface and outside this tool.",
+    "Create or replace a reversible local booking draft. Final confirmation remains on the visible interface and outside this tool: a person completes a WebAuthn presence ceremony there, and no tool can perform it.",
   inputSchema: {
     type: "object",
     properties: {

@@ -83,6 +83,7 @@ Required evidence and acceptance conditions:
   - `status: "draft_staged"`
   - `visiblePostcondition: "booking_draft_updated"`
   - `requiresHumanConfirmation: true`
+  - `humanConfirmation: { surface: "visible-interface", method: "webauthn-user-presence", toolAvailable: false }`
   - `source: "synthetic_draft"`
   - a draft whose id is `draft-repair-2026-09-05-1430` and status is `draft`
 - The visible form changes to Service `Repair`, Date `2026-09-05`, and Time `14:30`.

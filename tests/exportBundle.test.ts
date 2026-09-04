@@ -2,6 +2,7 @@ import {
   buildExportBundle,
   serializeVerifiedExportBundle,
   type ExportBundle,
+  verifyExportBundleIntegrity,
 } from "../src/export/buildExportBundle";
 import { BOOKING_TOOL_NAMES } from "../src/domain/booking";
 import { canonicalJson } from "../src/discovery/scanOwnedFixture";
@@ -334,5 +335,34 @@ describe("deterministic export bundle", () => {
     } finally {
       Reflect.deleteProperty(document, "modelContext");
     }
+  });
+});
+
+describe("export evidence carries the human-presence receipt", () => {
+  const receipt = Object.freeze({
+    method: "webauthn-user-presence" as const,
+    ceremony: "assertion" as const,
+    subject: "draft-consultation-2026-09-03-1000",
+    rpId: "example.test",
+    userPresent: true as const,
+    userVerified: true,
+    credentialIdSha256: "ef".repeat(32),
+    verifiedAt: "2026-09-04T15:00:00.000Z",
+  });
+
+  it("records null when no person confirmed the draft", async () => {
+    const bundle = await buildExportBundle(await createExportReadyWorkflow());
+    expect(bundle.evidence.humanConfirmation).toBeNull();
+  });
+
+  it("records the receipt verbatim and binds it into the bundle hash", async () => {
+    const state = await createExportReadyWorkflow();
+    const without = await buildExportBundle(state);
+    const withReceipt = await buildExportBundle(state, { humanConfirmation: receipt });
+
+    expect(withReceipt.evidence.humanConfirmation).toEqual(receipt);
+    expect(JSON.parse(withReceipt.files[1].content).humanConfirmation).toEqual(receipt);
+    expect(withReceipt.bundleHash).not.toBe(without.bundleHash);
+    await expect(verifyExportBundleIntegrity(withReceipt)).resolves.toBeUndefined();
   });
 });

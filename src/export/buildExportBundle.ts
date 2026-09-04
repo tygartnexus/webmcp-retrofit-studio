@@ -8,6 +8,7 @@ import {
   hasPassingWorkflowValidation,
   type RetrofitWorkflowState,
 } from "../workflow/retrofitWorkflow";
+import type { PresenceReceipt } from "../presence/humanPresence";
 
 export interface ExportManifest {
   schemaVersion: "1.0.0";
@@ -47,6 +48,12 @@ export interface ExportEvidence {
     capturedCredentials: false;
     retainedRawValues: false;
   };
+  /** PII-free WebAuthn presence receipt when a person confirmed the draft; null otherwise. */
+  humanConfirmation: PresenceReceipt | null;
+}
+
+export interface ExportBundleOptions {
+  humanConfirmation?: PresenceReceipt | null;
 }
 
 export interface ExportFile {
@@ -322,6 +329,7 @@ async function assertExportReady(state: RetrofitWorkflowState): Promise<void> {
 
 export async function buildExportBundle(
   state: RetrofitWorkflowState,
+  options: ExportBundleOptions = {},
 ): Promise<ExportBundle> {
   await assertExportReady(state);
   const scan = state.scan!;
@@ -336,6 +344,7 @@ export async function buildExportBundle(
       .filter((observation) => observation.present)
       .map(({ id, selector, semanticRole }) => ({ id, selector, semanticRole })),
     safety: scan.safety,
+    humanConfirmation: options.humanConfirmation ? { ...options.humanConfirmation } : null,
   };
   const evidenceContent = canonicalJson(evidence);
   const evidenceSha256 = await sha256Hex(evidenceContent);

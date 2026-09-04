@@ -2064,3 +2064,33 @@ code,
     font-size: 8px;
   }
 }
+
+/* Human-presence ceremony (finalization gate) */
+.confirm-dialog .presence-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-muted, #4b5f66);
+}
+
+.confirm-dialog .presence-error {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fdecec;
+  color: #8a1f1f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.human-confirmed small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+  word-break: break-all;
+}

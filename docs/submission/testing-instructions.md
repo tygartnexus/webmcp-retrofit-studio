@@ -24,7 +24,7 @@ For WebMCP tool testing, use either:
 6. Approve the proposal and continue to **Preview generated retrofit**. Confirm the three approved tool names, stable hashes, strict schemas, and visible-interface-only finalization boundary. No WebMCP tools should be registered on Preview.
 7. Continue to **Validate generated tools** and stay on this stage while testing tools. Registration is intentionally scoped to this stage; navigating away removes the tool group.
 8. Click **Run deterministic checks**. A pass result must appear only after execution and should read `8/8 passed`.
-9. Use the visible booking form to stage Consultation on 2026-09-03 at 10:00. Click **Confirm booking** and inspect the exact-value confirmation dialog. Closing or cancelling the dialog causes no real transaction.
+9. Use the visible booking form to stage Consultation on 2026-09-03 at 10:00. Click **Confirm booking** and inspect the exact-value confirmation dialog. Click **Verify presence and confirm**; the browser asks for a touch, biometric, or PIN on a platform authenticator (Windows Hello, Touch ID, or an Android screen lock). Only a completed gesture confirms the draft, and the status line then shows a PII-free presence receipt. Cancelling the prompt leaves the draft unconfirmed with a visible reason, and closing or cancelling the dialog causes no real transaction. On a machine without a platform authenticator the confirm action is unavailable by design.
 10. Continue to **Export retrofit package** only after required validation gates are satisfied. Review the manifest, evidence record, tool inventory, and bundle hash. Acknowledge the review boundary to enable the local download. Export does not deploy or publish.
 
 ## WebMCP agent journey

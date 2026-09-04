@@ -26,6 +26,12 @@ import {
   TestTube2,
   X,
 } from "lucide-react";
+import { BookingPreview, type DraftSource } from "./screens/BookingPreview";
+import {
+  createWebAuthnPresenceVerifier,
+  type HumanPresenceVerifier,
+  type PresenceReceipt,
+} from "./presence/humanPresence";
 import {
   Fragment,
   useCallback,
@@ -42,7 +48,6 @@ import {
 } from "./data/candidates";
 import {
   BOOKING_TOOL_NAMES,
-  getAvailability,
   stageBooking,
   type BookingDraft,
   type ServiceId,
@@ -84,7 +89,6 @@ import {
 
 type Screen = "scan" | "candidates" | "preview" | "validate" | "export";
 type ReviewDecision = "pending" | "approved" | "rejected";
-type DraftSource = "tool" | "visible-ui";
 type RegistrationState =
   | "idle"
   | "registering"
@@ -813,263 +817,6 @@ function PreviewScreen({
   );
 }
 
-function BookingPreview({
-  draft,
-  draftSource,
-  confirmed,
-  onStage,
-  onValuesChanged,
-  onConfirm,
-}: {
-  draft: BookingDraft | null;
-  draftSource: DraftSource | null;
-  confirmed: boolean;
-  onStage: (input: { serviceId: ServiceId; date: string; time: string }) => void;
-  onValuesChanged: () => void;
-  onConfirm: () => void;
-}) {
-  const [serviceId, setServiceId] = useState<ServiceId>(
-    draft?.serviceId ?? "consultation",
-  );
-  const [date, setDate] = useState(draft?.date ?? "2026-09-03");
-  const [time, setTime] = useState(draft?.time ?? "10:00");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const confirmTriggerRef = useRef<HTMLButtonElement>(null);
-  const cancelDialogRef = useRef<HTMLButtonElement>(null);
-  const availability = useMemo(
-    () => getAvailability({ serviceId }),
-    [serviceId],
-  );
-  const dates = useMemo(
-    () => [...new Set(availability.slots.map((slot) => slot.date))],
-    [availability],
-  );
-  const times = availability.slots
-    .filter((slot) => slot.date === date)
-    .map((slot) => slot.time);
-  const matchesDraft =
-    draft?.serviceId === serviceId && draft.date === date && draft.time === time;
-
-  useEffect(() => {
-    if (!draft) return;
-    setServiceId(draft.serviceId);
-    setDate(draft.date);
-    setTime(draft.time);
-    setDialogOpen(false);
-  }, [draft]);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (dialogOpen && !dialog.open) {
-      if (typeof dialog.showModal === "function") {
-        dialog.showModal();
-      } else {
-        dialog.setAttribute("open", "");
-      }
-      cancelDialogRef.current?.focus();
-    } else if (!dialogOpen && dialog.open) {
-      if (typeof dialog.close === "function") {
-        dialog.close();
-      } else {
-        dialog.removeAttribute("open");
-      }
-    }
-  }, [dialogOpen]);
-
-  const closeConfirmation = () => {
-    const dialog = dialogRef.current;
-    if (dialog?.open) {
-      if (typeof dialog.close === "function") {
-        dialog.close();
-      } else {
-        dialog.removeAttribute("open");
-      }
-    }
-    setDialogOpen(false);
-    confirmTriggerRef.current?.focus();
-  };
-
-  const changeService = (nextServiceId: ServiceId) => {
-    const nextAvailability = getAvailability({ serviceId: nextServiceId });
-    const firstSlot = nextAvailability.slots[0];
-    setServiceId(nextServiceId);
-    setDate(firstSlot.date);
-    setTime(firstSlot.time);
-    setDialogOpen(false);
-    onValuesChanged();
-  };
-
-  const changeDate = (nextDate: string) => {
-    const firstTime = availability.slots.find((slot) => slot.date === nextDate)?.time;
-    setDate(nextDate);
-    if (firstTime) setTime(firstTime);
-    setDialogOpen(false);
-    onValuesChanged();
-  };
-
-  return (
-    <section className="preview-card" aria-labelledby="preview-heading">
-      <div className="preview-browser-bar">
-        <span />
-        <span />
-        <span />
-        <div>legacy-booking.test/preview</div>
-      </div>
-      <div className="booking-demo">
-        <div className="booking-demo-heading">
-          <span className="mini-brand">LB</span>
-          <div>
-            <p className="eyebrow">Synthetic service desk</p>
-            <h2 id="preview-heading">Book a service</h2>
-          </div>
-        </div>
-        <p className="preview-helper">
-          An agent may prepare this draft. You review and confirm it here.
-        </p>
-        <label>
-          Service
-          <select
-            aria-label="Service"
-            onChange={(event) => changeService(event.target.value as ServiceId)}
-            value={serviceId}
-          >
-            <option value="consultation">Consultation</option>
-            <option value="installation">Installation</option>
-            <option value="repair">Repair</option>
-          </select>
-        </label>
-        <div className="field-row">
-          <label>
-            Date
-            <select
-              aria-label="Date"
-              onChange={(event) => changeDate(event.target.value)}
-              value={date}
-            >
-              {dates.map((availableDate) => (
-                <option key={availableDate} value={availableDate}>
-                  {availableDate}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Time
-            <select
-              aria-label="Time"
-              onChange={(event) => {
-                setTime(event.target.value);
-                setDialogOpen(false);
-                onValuesChanged();
-              }}
-              value={time}
-            >
-              {times.map((availableTime) => (
-                <option key={availableTime} value={availableTime}>
-                  {availableTime}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="draft-summary">
-          <div>
-            <span>Draft status</span>
-            <strong>
-              {matchesDraft
-                ? draftSource === "tool"
-                  ? "Staged by tool"
-                  : "Staged in visible UI"
-                : draft
-                  ? "Changes not staged"
-                  : "Fixture preview"}
-            </strong>
-          </div>
-          <span className="draft-dot" />
-        </div>
-        <button
-          className="stage-draft-button"
-          onClick={() => onStage({ serviceId, date, time })}
-          type="button"
-        >
-          <ClipboardCheck size={16} /> Stage selected draft
-        </button>
-        <button
-          className="human-confirm-button"
-          disabled={!matchesDraft}
-          onClick={() => setDialogOpen(true)}
-          ref={confirmTriggerRef}
-          type="button"
-        >
-          <LockKeyhole size={17} /> Confirm booking
-        </button>
-        {confirmed && matchesDraft && (
-          <p className="human-confirmed" role="status">
-            <CheckCircle2 size={17} /> Confirmed through visible UI
-          </p>
-        )}
-        <p className="human-boundary-copy">
-          This visible control is not registered as a WebMCP tool.
-        </p>
-        <dialog
-          aria-labelledby="confirm-dialog-heading"
-          className="confirm-dialog"
-          onCancel={(event) => {
-            event.preventDefault();
-            closeConfirmation();
-          }}
-          onClose={() => {
-            setDialogOpen(false);
-            confirmTriggerRef.current?.focus();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              closeConfirmation();
-            }
-          }}
-          ref={dialogRef}
-        >
-          {draft && matchesDraft && (
-            <>
-            <h3 id="confirm-dialog-heading">Confirm staged booking</h3>
-            <p>
-              <strong>{draft.serviceName}</strong>
-              <span>
-                {draft.date} at {draft.time}
-              </span>
-            </p>
-            <div>
-              <button
-                autoFocus
-                onClick={closeConfirmation}
-                ref={cancelDialogRef}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => {
-                  onConfirm();
-                  closeConfirmation();
-                }}
-                type="button"
-              >
-                Confirm selected draft
-              </button>
-            </div>
-            </>
-          )}
-        </dialog>
-      </div>
-    </section>
-  );
-}
-
 function RegistrationBadge({ state }: { state: RegistrationState }) {
   const copy: Record<RegistrationState, string> = {
     idle: "Registration deferred to Validate",
@@ -1225,7 +972,8 @@ function ValidateScreen({
   registration,
   draft,
   draftSource,
-  confirmed,
+  presenceReceipt,
+  presenceVerifier,
   validationReport,
   validationRunning,
   validationError,
@@ -1235,12 +983,13 @@ function ValidateScreen({
   onContinue,
   onStage,
   onValuesChanged,
-  onConfirm,
+  onConfirmed,
 }: {
   registration: RegistrationState;
   draft: BookingDraft | null;
   draftSource: DraftSource | null;
-  confirmed: boolean;
+  presenceReceipt: PresenceReceipt | null;
+  presenceVerifier: HumanPresenceVerifier;
   validationReport: DeterministicReport | null;
   validationRunning: boolean;
   validationError: string | null;
@@ -1250,7 +999,7 @@ function ValidateScreen({
   onContinue: () => void;
   onStage: (input: { serviceId: ServiceId; date: string; time: string }) => void;
   onValuesChanged: () => void;
-  onConfirm: () => void;
+  onConfirmed: (receipt: PresenceReceipt) => void;
 }) {
   const validationPassed =
     validationReport !== null &&
@@ -1269,10 +1018,11 @@ function ValidateScreen({
       </div>
       <div className="validation-workbench">
         <BookingPreview
-          confirmed={confirmed}
           draft={draft}
           draftSource={draftSource}
-          onConfirm={onConfirm}
+          onConfirmed={onConfirmed}
+          presenceReceipt={presenceReceipt}
+          presenceVerifier={presenceVerifier}
           onStage={onStage}
           onValuesChanged={onValuesChanged}
         />
@@ -1486,7 +1236,16 @@ function ExportScreen({
   );
 }
 
-export function App() {
+export interface AppProps {
+  /** Test seam; production uses the WebAuthn verifier. */
+  presenceVerifier?: HumanPresenceVerifier;
+}
+
+export function App({ presenceVerifier }: AppProps = {}) {
+  const verifier = useMemo(
+    () => presenceVerifier ?? createWebAuthnPresenceVerifier(),
+    [presenceVerifier],
+  );
   const [screen, setScreen] = useState<Screen>("scan");
   const [workflow, setWorkflow] = useState<RetrofitWorkflowState>(() =>
     createRetrofitWorkflow(),
@@ -1500,7 +1259,7 @@ export function App() {
   const [registration, setRegistration] = useState<RegistrationState>("idle");
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   const [draftSource, setDraftSource] = useState<DraftSource | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [presenceReceipt, setPresenceReceipt] = useState<PresenceReceipt | null>(null);
   const [validationReport, setValidationReport] =
     useState<DeterministicReport | null>(null);
   const [validationRunning, setValidationRunning] = useState(false);
@@ -1526,7 +1285,7 @@ export function App() {
   const handleDraftStaged = useCallback((nextDraft: BookingDraft) => {
     setDraft(nextDraft);
     setDraftSource("tool");
-    setConfirmed(false);
+    setPresenceReceipt(null);
   }, []);
 
   const modelContext = useMemo(() => {
@@ -1578,7 +1337,7 @@ export function App() {
     (input: { serviceId: ServiceId; date: string; time: string }) => {
       setDraft(stageBooking(input));
       setDraftSource("visible-ui");
-      setConfirmed(false);
+      setPresenceReceipt(null);
     },
     [],
   );
@@ -1594,7 +1353,7 @@ export function App() {
         setDecision("pending");
         setDraft(null);
         setDraftSource(null);
-        setConfirmed(false);
+        setPresenceReceipt(null);
         setValidationReport(null);
         setValidationError(null);
         setLiveUatRecorded(false);
@@ -1628,7 +1387,7 @@ export function App() {
     setDecision("rejected");
     setDraft(null);
     setDraftSource(null);
-    setConfirmed(false);
+    setPresenceReceipt(null);
     setValidationReport(null);
     setValidationError(null);
     setLiveUatRecorded(false);
@@ -1695,7 +1454,8 @@ export function App() {
     const requestId = exportRequestIdRef.current + 1;
     exportRequestIdRef.current = requestId;
     const sourceWorkflow = workflow;
-    void buildExportBundle(sourceWorkflow)
+    const sourceReceipt = presenceReceipt;
+    void buildExportBundle(sourceWorkflow, { humanConfirmation: sourceReceipt })
       .then((bundle) => {
         if (exportRequestIdRef.current !== requestId) return;
         setExportBundle(bundle);
@@ -1813,16 +1573,19 @@ export function App() {
           )}
           {screen === "validate" && (
             <ValidateScreen
-              confirmed={confirmed}
+              presenceReceipt={presenceReceipt}
+              presenceVerifier={verifier}
               draft={draft}
               draftSource={draftSource}
               liveUatRecorded={liveUatRecorded}
-              onConfirm={() => setConfirmed(true)}
+              onConfirmed={(receipt) => {
+                if (receipt.subject === draft?.id) setPresenceReceipt(receipt);
+              }}
               onContinue={continueToExport}
               onRecordLiveUat={() => setLiveUatRecorded(true)}
               onRunValidation={handleRunValidation}
               onStage={handleLocalStage}
-              onValuesChanged={() => setConfirmed(false)}
+              onValuesChanged={() => setPresenceReceipt(null)}
               registration={registration}
               validationError={validationError}
               validationReport={validationReport}

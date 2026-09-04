@@ -152,6 +152,11 @@ function createToolDefinitions(
           status: "draft_staged",
           visiblePostcondition: "booking_draft_updated",
           requiresHumanConfirmation: true,
+          humanConfirmation: {
+            surface: "visible-interface",
+            method: "webauthn-user-presence",
+            toolAvailable: false,
+          },
           source: "synthetic_draft",
           draft: { ...draft },
         };

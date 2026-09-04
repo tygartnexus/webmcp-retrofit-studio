@@ -78,3 +78,44 @@ test("mobile layout has no horizontal overflow", async ({ page }, testInfo) => {
 
   expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.clientWidth);
 });
+
+test("finalization requires a real WebAuthn presence ceremony", async ({ page, browserName }, testInfo) => {
+  test.skip(browserName !== "chromium", "virtual authenticator needs the Chromium CDP WebAuthn domain");
+  await installWebMcpStub(page);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  await page.goto("/");
+  await scanOwnedFixture(page);
+  await page.getByRole("button", { name: "Approve for preview" }).click();
+  await page.getByRole("button", { name: /Preview/ }).click();
+  await page.getByRole("button", { name: "Lock version for validation" }).click();
+  await page.getByRole("button", { name: "Stage selected draft" }).click();
+  await page.getByRole("button", { name: "Confirm booking" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Confirm staged booking" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Verify presence and confirm" }).click();
+
+  const status = page.getByRole("status");
+  await expect(status).toContainText("Confirmed with verified human presence");
+  await expect(status).toContainText("WebAuthn registration");
+  await expect(dialog).toBeHidden();
+
+  // Failure paths (cancelled, no presence, challenge mismatch) are covered by
+  // the unit tests; a removed authenticator only times out here.
+  await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
+  await testInfo.attach("presence-gate", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
+});

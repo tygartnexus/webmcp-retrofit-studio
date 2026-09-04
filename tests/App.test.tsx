@@ -145,9 +145,25 @@ describe("Retrofit Studio workbench", () => {
     expect(screen.getByRole("button", { name: "Confirm booking" })).toBeInTheDocument();
   });
 
-  it("requires a staged draft and exact visible confirmation", async () => {
+  it("requires a staged draft, exact visible confirmation, and a presence ceremony", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    const verifier = {
+      method: "webauthn-user-presence" as const,
+      available: true,
+      async verify(subject: string) {
+        return {
+          method: "webauthn-user-presence" as const,
+          ceremony: "registration" as const,
+          subject,
+          rpId: "example.test",
+          userPresent: true as const,
+          userVerified: false,
+          credentialIdSha256: "cd".repeat(32),
+          verifiedAt: "2026-09-04T15:00:00.000Z",
+        };
+      },
+    };
+    render(<App presenceVerifier={verifier} />);
     await advanceToValidate(user);
     const confirm = screen.getByRole("button", { name: "Confirm booking" });
     expect(confirm).toBeDisabled();
@@ -160,9 +176,10 @@ describe("Retrofit Studio workbench", () => {
     expect(within(dialog).getByText("Consultation")).toBeInTheDocument();
     expect(within(dialog).getByText("2026-09-03 at 10:00")).toBeInTheDocument();
     await user.click(
-      within(dialog).getByRole("button", { name: "Confirm selected draft" }),
+      within(dialog).getByRole("button", { name: "Verify presence and confirm" }),
     );
-    expect(screen.getByText("Confirmed through visible UI")).toBeInTheDocument();
+    expect(await screen.findByText(/Confirmed with verified human presence/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("presence only");
   });
 
   it("closes confirmation with Escape and restores focus to its trigger", async () => {

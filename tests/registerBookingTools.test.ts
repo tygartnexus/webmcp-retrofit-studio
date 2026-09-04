@@ -92,6 +92,11 @@ describe("WebMCP booking adapter", () => {
       status: "draft_staged",
       visiblePostcondition: "booking_draft_updated",
       requiresHumanConfirmation: true,
+      humanConfirmation: {
+        surface: "visible-interface",
+        method: "webauthn-user-presence",
+        toolAvailable: false,
+      },
       source: "synthetic_draft",
     });
     expect(staged).toHaveBeenCalledWith(
