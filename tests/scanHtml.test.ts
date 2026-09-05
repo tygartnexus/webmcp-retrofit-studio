@@ -49,6 +49,35 @@ describe("generic HTML scanner", () => {
     expect(fields.topic).toMatchObject({ kind: "enum", options: ["sales", "support", "other"] });
     expect(fields.message).toMatchObject({ kind: "string", required: true, maxLength: 2000 });
     expect(fields.newsletter).toMatchObject({ kind: "boolean", label: "Subscribe to updates" });
+    expect(fields.priority).toMatchObject({
+      kind: "enum",
+      inputType: "radio",
+      label: "Priority",
+      required: true,
+      options: ["low", "high"],
+      selector: '#contact-form [name="priority"]',
+    });
+    expect(form.fields.filter((field) => field.name === "priority")).toHaveLength(1);
+  });
+
+  it("does not treat a GET form as read unless it carries a read signal", async () => {
+    const owner = (html: string): HtmlSnapshot => ({
+      id: "owner-get",
+      revision: "1",
+      sourceKind: "owner-supplied-html",
+      authorization: "owner-authorized",
+      title: "GET actions",
+      html,
+    });
+    const logout = await scanHtml(owner('<form method="get" action="/logout"><button>Log out</button></form>'));
+    const unsubscribe = await scanHtml(owner('<form method="get"><input name="id"><button>Unsubscribe</button></form>'));
+    const saveView = await scanHtml(owner('<form method="get"><input name="view"><button>Save view</button></form>'));
+    const next = await scanHtml(owner('<form method="get"><input name="page"><button>Next</button></form>'));
+
+    expect(logout.capabilities[0]).toMatchObject({ kind: "form", riskClass: "credential" });
+    expect(unsubscribe.capabilities[0]).toMatchObject({ kind: "form", riskClass: "finalize" });
+    expect(saveView.capabilities[0]).toMatchObject({ kind: "form", riskClass: "write" });
+    expect(next.capabilities[0]).toMatchObject({ kind: "search", riskClass: "read" });
   });
 
   it("classifies a GET search form as a search capability with numeric bounds and enums", async () => {

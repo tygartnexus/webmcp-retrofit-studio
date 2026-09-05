@@ -40,6 +40,11 @@ export const CONTACT_FORM_FIXTURE: HtmlSnapshot = Object.freeze({
       <label for="message">Message</label>
       <textarea id="message" name="message" required maxlength="2000"></textarea>
       <label><input type="checkbox" name="newsletter"> Subscribe to updates</label>
+      <fieldset>
+        <legend>Priority</legend>
+        <label><input name="priority" type="radio" value="low" required> Low</label>
+        <label><input name="priority" type="radio" value="high"> High</label>
+      </fieldset>
       <button type="submit">Send message</button>
     </form>
   </main>

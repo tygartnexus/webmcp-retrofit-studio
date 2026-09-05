@@ -92,9 +92,12 @@ export interface GenericScanResult {
 
 const MAX_HTML_CHARS = 2_000_000;
 const FINALIZE_PATTERN =
-  /\b(place order|pay|purchase|checkout|confirm|finali[sz]e|delete|remove|cancel|destroy|purge|submit order|book now)\b/i;
+  /\b(place order|pay|purchase|checkout|confirm|finali[sz]e|delete|remove|cancel|destroy|purge|submit order|book now|deactivate|close account|terminate|unsubscribe|erase|wipe)\b/i;
 const SEARCH_PATTERN = /\b(search|find|filter|look ?up|browse)\b/i;
-const CREDENTIAL_ACTION_PATTERN = /\b(log ?in|sign ?in|authenticate|password)\b/i;
+/** Action labels that read or navigate without changing state. */
+const READ_ACTION_PATTERN =
+  /^(go|search|find|filter|apply filters?|sort|show|view|list|browse|look ?up|next|previous|prev|page|refresh|load more|export)\b/i;
+const CREDENTIAL_ACTION_PATTERN = /\b(log ?in|sign ?in|log ?out|sign ?out|authenticate|password)\b/i;
 const PAYMENT_NAME_PATTERN = /(card|cvv|cvc|expir|iban|routing|account ?number)/i;
 
 
@@ -187,6 +190,7 @@ function observeField(control: Element, form: Element, formSelector: string): Fi
     required: control.hasAttribute("required"),
   };
   if (excluded) return { ...field, excluded };
+  if (inputType === "radio") return observeRadio(control, field);
   const label = labelFor(control, form);
   const placeholder = control.getAttribute("placeholder")?.trim();
   const pattern = control.getAttribute("pattern")?.trim();
@@ -211,6 +215,51 @@ function observeField(control: Element, form: Element, formSelector: string): Fi
   };
 }
 
+/**
+ * A radio is one option of a group. Its static value attribute is the option
+ * key (never user data), and the fieldset legend names the group.
+ */
+function observeRadio(control: Element, field: FieldObservation): FieldObservation {
+  const legend = text(control.closest("fieldset")?.querySelector("legend") ?? null);
+  const value = control.getAttribute("value") ?? "";
+  return {
+    ...field,
+    kind: "enum",
+    ...(legend ? { label: legend } : {}),
+    options: value ? [value] : [],
+  };
+}
+
+/** Same-name radios collapse into one enum field; required if any option is. */
+function collapseRadioGroups(
+  fields: readonly FieldObservation[],
+  formSelector: string,
+): FieldObservation[] {
+  const groups = new Map<string, FieldObservation>();
+  const collapsed: FieldObservation[] = [];
+  for (const field of fields) {
+    if (field.inputType !== "radio") {
+      collapsed.push(field);
+      continue;
+    }
+    const existing = groups.get(field.name);
+    if (!existing) {
+      const group = { ...field, selector: `${formSelector} [name="${field.name}"]` };
+      groups.set(field.name, group);
+      collapsed.push(group);
+      continue;
+    }
+    const merged: FieldObservation = {
+      ...existing,
+      required: existing.required || field.required,
+      options: [...(existing.options ?? []), ...(field.options ?? [])],
+    };
+    groups.set(field.name, merged);
+    collapsed[collapsed.indexOf(existing)] = merged;
+  }
+  return collapsed;
+}
+
 function observeButtons(form: Element, formSelector: string): ButtonObservation[] {
   return [...form.querySelectorAll("button, input[type=submit]")].map((button, index) => ({
     label: button.tagName === "INPUT" ? (button.getAttribute("value") ?? "Submit") : text(button),
@@ -232,10 +281,10 @@ function classifyForm(
   const labels = [actionLabel, ...fields.map((field) => field.label ?? "")].join(" ");
   if (hasCredential || CREDENTIAL_ACTION_PATTERN.test(actionLabel)) return { kind: "form", riskClass: "credential" };
   if (hasPayment || FINALIZE_PATTERN.test(actionLabel)) return { kind: "form", riskClass: "finalize" };
-  if (method === "get" && (roleSearch || hasSearchInput || SEARCH_PATTERN.test(labels))) {
-    return { kind: "search", riskClass: "read" };
-  }
-  if (method === "get") return { kind: "search", riskClass: "read" };
+  const readSignal =
+    roleSearch || hasSearchInput || SEARCH_PATTERN.test(labels) || READ_ACTION_PATTERN.test(actionLabel.trim());
+  if (method === "get" && readSignal) return { kind: "search", riskClass: "read" };
+  // A GET form with no read signal is still an action; stage it rather than assume it is safe.
   return { kind: "form", riskClass: "write" };
 }
 
@@ -252,9 +301,12 @@ function observeForm(form: Element, index: number, document: Document): Capabili
   const buttons = observeButtons(form, selector);
   const submit = buttons.find((button) => button.type === "submit") ?? buttons[0];
   const actionLabel = submit?.label ?? "Submit";
-  const fields = [...form.querySelectorAll("input, select, textarea")]
-    .map((control) => observeField(control, form, selector))
-    .filter((field): field is FieldObservation => field !== null);
+  const fields = collapseRadioGroups(
+    [...form.querySelectorAll("input, select, textarea")]
+      .map((control) => observeField(control, form, selector))
+      .filter((field): field is FieldObservation => field !== null),
+    selector,
+  );
   const { kind, riskClass } = classifyForm(method, actionLabel, form, fields);
   const primary: CapabilityObservation = {
     id: `${kind}:${selector}`,

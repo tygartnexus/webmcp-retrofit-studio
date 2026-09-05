@@ -61,7 +61,7 @@ and select options. Field values are never read.
 | password field, or action label like "Log in" | form | credential | no |
 | payment-shaped field (`autocomplete="cc-*"`, card, cvv, expiry), or action label like "Place order", "Pay", "Confirm", "Delete" | form | finalize | no |
 | GET form with a search role, a search input, or a search-like label | search | read | read-only tool |
-| any other GET form | search | read | read-only tool |
+| GET form with a read verb (go, sort, next, page, export) | search | read | read-only tool |
 | any other form | form | write | state-changing tool, staged |
 | table | table | read | read-only tool with `page` and `limit` |
 
@@ -83,23 +83,29 @@ the Generic candidates screen: proposed tools with parameter tables, the
 exclusions with reasons, the safety envelope, and both fingerprints. The only
 action is Back to scan. Choosing the booking fixture restores the full flow.
 
-## Known gaps, tracked for the runtime slice
+## Gaps closed before the runtime slice
 
-These do not affect this build because generic proposals never register or
-run, but each must close before the runtime adapter ships:
+- GET forms classify as read only when they carry a read signal: a search
+  role, a search input, a search-like label, or a read verb in the action
+  label (go, search, find, filter, sort, show, view, list, browse, next,
+  previous, page, refresh, load more, export). Any other GET form is staged
+  as a write. "Log out" and "Sign out" join the credential boundary;
+  deactivate, close account, terminate, unsubscribe, erase, and wipe join
+  finalize.
+- Same-name radios collapse into one enum field whose options are the static
+  value attributes, labelled by the fieldset legend, required if any option
+  is required.
+- The step rail treats a generic scan as a completed scan.
 
-- GET forms whose action is state-changing but not in the finalize
-  vocabulary (for example "Log out", "Unsubscribe", "Deactivate") currently
-  classify as read. The runtime slice should require a read-verb allowlist
-  for GET forms instead of defaulting to read.
-- Radio groups are observed as one string field per radio sharing a name, so
-  the schema loses the constrained value set. Radios should collapse into one
-  enum field.
-- The scanner relies on DOMParser inertness alone. When owner-supplied HTML
-  arrives, carry over the pre-parse active-content guard that
-  `scanOwnedFixture` applies.
-- The step rail shows Scan and Candidates as incomplete while a generic
-  proposal is on screen, because the booking workflow is reset. Cosmetic.
+## Decision: no pre-parse content filter in the generic scanner
+
+`scanOwnedFixture` rejects markup containing scripts, iframes, or images
+before parsing because the booking fixture is hand-authored and should never
+contain them. The generic scanner deliberately accepts such markup: real
+pages contain scripts, DOMParser never runs them, and the count of ignored
+scripts is part of the safety envelope the owner reviews. The runtime slice
+never injects scanned HTML into the live document, so the guard is not
+needed there either. Revisit if a future slice renders scanned HTML.
 
 ## Next slices
 

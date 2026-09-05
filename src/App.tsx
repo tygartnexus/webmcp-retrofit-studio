@@ -1640,7 +1640,7 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
           approved={approved}
           onNavigate={navigate}
           previewReady={previewReady}
-          scanComplete={workflow.scan !== null}
+          scanComplete={workflow.scan !== null || generic !== null}
           screen={screen}
           validated={exportReady}
         />

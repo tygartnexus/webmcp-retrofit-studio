@@ -70,7 +70,12 @@ describe("generic capability inference", () => {
     const [tool] = proposal.tools;
 
     expect(tool.name).toBe("send_message");
-    expect(tool.inputSchema.required).toEqual(["fullName", "email", "message"]);
+    expect(tool.inputSchema.required).toEqual(["fullName", "email", "message", "priority"]);
+    expect(tool.inputSchema.properties.priority).toMatchObject({
+      type: "string",
+      enum: ["low", "high"],
+      description: "Priority",
+    });
     expect(tool.inputSchema.properties.email).toMatchObject({ type: "string", format: "email", description: "Email address" });
     expect(tool.inputSchema.properties.fullName).toMatchObject({ maxLength: 80 });
     expect(tool.evidenceIds.length).toBeGreaterThan(0);
