@@ -1,8 +1,9 @@
 # Generic scanner (preview slice)
 
-Status: preview only. Generic proposals are reviewed on screen and never
-registered, executed, validated, or exported in this build. The booking
-fixture still drives the full retrofit flow.
+Status: full flow. Generic proposals are reviewed, approved, registered,
+exercised through a tool console, validated by nine deterministic checks, and
+exported as a hash-bound package. The booking fixture keeps its original
+hand-modelled flow alongside.
 
 ## Why
 
@@ -76,12 +77,92 @@ underscore) and are made unique with numeric suffixes. Schemas set
 map field kinds to JSON Schema types, enums, formats, and patterns. Every
 proposal is run through `lintToolContracts` in tests.
 
-## What the screen does
+## Runtime adapter
 
-Scan offers a fixture picker. Choosing a generic fixture scans it and opens
-the Generic candidates screen: proposed tools with parameter tables, the
-exclusions with reasons, the safety envelope, and both fingerprints. The only
-action is Back to scan. Choosing the booking fixture restores the full flow.
+`src/runtime/genericRuntime.ts` binds each proposed tool to the capability
+the scanner observed and registers it with the page's model context using
+the same fail-closed rollback as the booking adapter: if any registration
+fails, every tool from that scope is aborted.
+
+- Table tools read rows from the bound table with `page` and `limit` and
+  trim rows rather than exceed the 1.5K-character output budget.
+- Search tools validate input, apply it to the bound controls, and return
+  `{ status: "query_prepared", performed: false, request }`. They never
+  submit.
+- Write tools validate input, apply it, and stage a change through
+  `onStaged`; the response says `requiresHumanConfirmation: true` and names
+  the visible interface as the only place confirmation can happen. They
+  never submit either.
+- A forged proposal that points a tool at a finalize or credential
+  capability is refused at binding time.
+
+In this build the host document is the inert DOMParser copy of the snapshot,
+so the console shows exactly what an agent would see without a network. On a
+live page the same adapter runs against `window.document`.
+
+Input validation (`src/runtime/validateToolInput.ts`) enforces the schema an
+agent was shown: plain object, no undeclared keys (symbols and accessor
+properties included), required keys, and per-property type, enum, range,
+length, pattern, and format.
+
+## Deterministic checks
+
+`src/validation/runGenericChecks.ts` registers the tools into a mock model
+context against a fresh inert copy of the page and runs nine checks. Each
+has a failure-path test that breaks one tool through the `transformTool` or
+`extraTools` seam.
+
+| Check | Proves |
+|---|---|
+| inventory | registered names equal the proposal exactly |
+| exclusions-absent | no tool binds a finalize or credential action, and no name matches an excluded action |
+| annotations | readOnlyHint matches the risk class; untrustedContentHint set |
+| contracts | every contract passes the static lint |
+| undeclared-input | every tool rejects an undeclared property |
+| no-submit | no submit() call and no submit event during any execution |
+| output-budget | read tools stay within 1.5K characters |
+| cancellation | every tool rejects an aborted signal |
+| staging | every write reports draft_staged and stages on the visible surface |
+
+The report carries the scan and proposal hashes; a report for another
+proposal never counts as passing.
+
+## Export
+
+`src/export/buildGenericExportBundle.ts` refuses to build unless the report
+passed for this exact proposal and scan. The bundle holds four hashed files:
+
+- `webmcp-retrofit.manifest.json`: hashes, tool names, excluded actions,
+  validation summary, artifact hashes.
+- `webmcp-retrofit.tools.json`: contracts plus page bindings (selectors,
+  method, field selectors, input types).
+- `webmcp-retrofit.evidence.json`: safety envelope, capability list, and
+  any PII-free presence receipts. Never field values.
+- `webmcp-retrofit.generated.js`: a standalone embed.
+
+### What the embed does and does not do
+
+The embed registers the reviewed tools with `document.modelContext` on the
+live page. It applies validated input to the bound controls, reads tables,
+prepares search requests, and dispatches `webmcp-retrofit:staged` for
+writes. It never submits. Its input validator implements the same rules as
+the studio runtime (`validateToolInput`): plain object with an ordinary
+prototype, no undeclared keys including symbols, own data properties only,
+required keys, and per-property type, integer, range, length, pattern, and
+format. The two implementations are kept in step by
+`tests/embedConformance.test.ts`, which runs one table of inputs through
+both and fails on any difference in outcome or message. The manifest records
+`embedValidation: "same-rules-as-studio-runtime"`. The host page should
+still keep its own server-side validation, which it needs regardless of
+agents. Receipts in the evidence must name a staged change recorded in the
+session for a capability of this proposal; the export refuses anything else.
+
+## Screens
+
+Candidates approves for runtime. Preview shows the registration badge, the
+tool console, and staged changes with a passkey confirmation per change.
+Validate runs the nine checks. Export shows the four files and their hashes
+behind an exact-hash approval before a local download.
 
 ## Gaps closed before the runtime slice
 
@@ -109,16 +190,11 @@ needed there either. Revisit if a future slice renders scanned HTML.
 
 ## Next slices
 
-1. Runtime adapter: register proposed read and write tools against a live
-   page through a small element binding layer, with the same fail-closed
-   rollback the booking registration has.
-2. Generic validation: run the deterministic checks over proposed tools,
-   including a finalize-exclusion oracle.
-3. Export: manifest and embed for generic proposals with per-file hashes.
-4. Owner-supplied HTML: paste or upload a page instead of a bundled fixture,
+1. Owner-supplied HTML: paste or upload a page instead of a bundled fixture,
    still parsed inertly.
-5. Agent-side companion (option B): a browser extension that discovers and
+2. Agent-side companion (option B): a browser extension that discovers and
    calls tools on retrofitted pages.
+3. Split App.tsx into screen modules.
 
 ## Related work and attribution
 

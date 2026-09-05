@@ -34,7 +34,7 @@ const DRAFT_CHANGED_MESSAGE =
 const UNAVAILABLE_MESSAGE =
   "Presence verification is unavailable here. WebAuthn on a secure origin is required, so the draft stays unconfirmed.";
 
-function describeFailure(error: unknown): string {
+export function describeFailure(error: unknown): string {
   if (error instanceof PresenceUnavailableError) return UNAVAILABLE_MESSAGE;
   if (error instanceof PresenceVerificationError) {
     switch (error.reason) {

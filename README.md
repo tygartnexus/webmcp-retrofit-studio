@@ -40,20 +40,37 @@ Tool input is revalidated during execution. Schemas reject additional properties
 
 The confirmation control requires a currently staged draft and displays its exact values before the final step. Confirmation then requires a WebAuthn ceremony on a platform authenticator (touch, biometric, or PIN). Automation that only synthesizes mouse and keyboard input can click the visible button but cannot complete the authenticator prompt, so the draft stays unconfirmed. The app records a PII-free presence receipt (method, ceremony type, the id of the draft the gesture was requested for, relying-party id, user-presence and user-verification flags, a SHA-256 of the credential id, and a timestamp) and carries it into the export evidence. A receipt is bound to the draft shown when the ceremony started; if a tool re-stages a different draft while the authenticator prompt is open, the completed gesture is discarded and the person is asked to review the new draft.
 
-### Generic scanner (preview only)
+### Generic retrofit flow
 
-The Scan screen offers a fixture picker. The booking fixture runs the full
-retrofit flow. The other fixtures (contact form, catalog search, orders
-table, checkout, login) are scanned inertly by a generic scanner that
-proposes tools for review: read-only tools for searches and tables,
-state-changing tools for ordinary forms, and no tool at all for credential
-entry or finalizing actions such as placing an order. Those exclusions are
-listed with the reason, and finalization stays on the visible page behind the
-presence ceremony.
+The Scan screen offers a fixture picker. The booking fixture runs the
+original hand-modelled flow. The other fixtures (contact form, catalog
+search, orders table, checkout, login) run the generic flow:
 
-In this build the generic proposals are preview only. They do not register,
-run, validate, or export. Design notes and the next slices are in
-[docs/design/generic-scanner.md](docs/design/generic-scanner.md).
+1. **Scan.** A DOMParser-only inert scan records forms, fields, buttons, and
+   tables with a safety envelope: scripts ignored, credential and hidden
+   fields excluded, no values retained, no requests.
+2. **Candidates.** Read-only tools are proposed for searches and tables,
+   staged write tools for ordinary forms, and no tool at all for credential
+   entry or finalizing actions such as placing an order. Exclusions are
+   listed with the reason. Approval is bound to the proposal hash.
+3. **Preview.** The approved tools register with `document.modelContext`
+   against an inert copy of the page. A tool console calls them exactly as an
+   agent would. Search tools apply parameters and return the request the
+   page would make without performing it. Write tools apply parameters and
+   stage a change that waits for a passkey gesture. Nothing submits.
+4. **Validate.** Nine deterministic checks run against a fresh inert copy:
+   exact inventory, no finalizing or credential binding, hints match risk,
+   contract lint, undeclared input rejected, no submit, read output within
+   1.5K characters, cancellation honoured, writes stage for a person.
+5. **Export.** A hash-bound package: manifest, tool contracts with page
+   bindings, PII-free evidence with any confirmation receipts, and an embed
+   script that registers the tools on the live page and announces staged
+   writes as a `webmcp-retrofit:staged` event for the page's own
+   confirmation step. Export refuses unless all nine checks passed for this
+   exact proposal.
+
+Design notes, the classification table, and what the embed does and does
+not do are in [docs/design/generic-scanner.md](docs/design/generic-scanner.md).
 
 ## Customer view
 

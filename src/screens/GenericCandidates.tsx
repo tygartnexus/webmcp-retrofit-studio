@@ -1,16 +1,19 @@
-import { AlertTriangle, ArrowLeft, Hash, Info, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Hash, Info, LockKeyhole, ShieldCheck, X } from "lucide-react";
 import type { GenericProposal, ProposedTool } from "../discovery/inferGenericCapabilities";
 import type { GenericScanResult } from "../discovery/scanHtml";
 
 /**
- * Preview-only review of a generic proposal. It shows what the inert scan
- * observed and what the inference proposed, and it deliberately offers no
- * approval: generic tools do not register or run in this build.
+ * Review of a generic proposal: what the inert scan observed, what the
+ * inference proposed, and what stays off the tool surface. Approval is bound
+ * to this exact proposal hash and unlocks the runtime step.
  */
 
 interface GenericCandidateScreenProps {
   scan: GenericScanResult;
   proposal: GenericProposal;
+  approved: boolean;
+  onApprove: () => void;
+  onReject: () => void;
   onBack: () => void;
 }
 
@@ -80,15 +83,16 @@ function ToolCard({ tool }: { tool: ProposedTool }) {
   );
 }
 
-export function GenericCandidateScreen({ scan, proposal, onBack }: GenericCandidateScreenProps) {
+export function GenericCandidateScreen({ scan, proposal, approved, onApprove, onReject, onBack }: GenericCandidateScreenProps) {
   const { safety } = scan;
+  const nothingToApprove = proposal.tools.length === 0;
   return (
     <div className="screen-content candidate-screen">
       <div className="screen-intro">
         <div>
           <p className="eyebrow">2 of 5 · Candidates</p>
           <h1>Generic candidate capabilities</h1>
-          <p>Proposed from an inert scan of “{scan.title}”. Preview only in this build.</p>
+          <p>Proposed from an inert scan of “{scan.title}”. Approve to bring these tools live for review.</p>
         </div>
         <div className="intro-status-stack">
           <span className="snapshot-chip">
@@ -106,7 +110,7 @@ export function GenericCandidateScreen({ scan, proposal, onBack }: GenericCandid
       <div className="candidate-workbench generic-workbench">
         <section aria-labelledby="generic-tools-heading">
           <h2 id="generic-tools-heading">Proposed tools ({proposal.tools.length})</h2>
-          {proposal.tools.length === 0 ? (
+          {nothingToApprove ? (
             <p>No tool is proposed. Every observed capability was a credential or finalizing action.</p>
           ) : (
             <ul className="candidate-list">
@@ -151,12 +155,26 @@ export function GenericCandidateScreen({ scan, proposal, onBack }: GenericCandid
 
       <div className="decision-bar">
         <div className="decision-status" role="status">
-          <AlertTriangle size={18} /> Preview only. Generic proposals do not register or run in this build. Approval,
-          runtime, validation, and export still cover the booking fixture.
+          {approved ? (
+            <>
+              <CheckCircle2 size={18} /> Exact proposal approved for runtime
+            </>
+          ) : (
+            <>
+              <Info size={18} /> Approval applies only to this proposal version. Excluded actions never register.
+            </>
+          )}
         </div>
         <div className="decision-actions">
           <button className="secondary-button" onClick={onBack} type="button">
             <ArrowLeft size={16} /> Back to scan
+          </button>
+          <button className="danger-quiet-button" onClick={onReject} type="button">
+            <X size={16} /> Reject
+          </button>
+          <button className="primary-button" disabled={approved || nothingToApprove} onClick={onApprove} type="button">
+            {approved ? <Check size={17} /> : <ArrowRight size={17} />}
+            {approved ? "Approved for runtime" : "Approve for runtime"}
           </button>
         </div>
       </div>

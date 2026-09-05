@@ -121,6 +121,11 @@ function objectNoun(capability: CapabilityObservation): string {
   return source.replace(LEADING_VERBS, "").trim() || "items";
 }
 
+/** HTML matches a pattern attribute against the whole value; the schema says so explicitly. */
+function anchorPattern(pattern: string): string {
+  return pattern.startsWith("^") && pattern.endsWith("$") ? pattern : `^(?:${pattern})$`;
+}
+
 function propertyFor(field: FieldObservation): PropertySchema {
   const description = truncate(field.label ?? field.placeholder ?? field.name, DESCRIPTION_BUDGET);
   const base: PropertySchema = { type: "string", description };
@@ -147,7 +152,7 @@ function propertyFor(field: FieldObservation): PropertySchema {
     default:
       return {
         ...base,
-        ...(field.pattern ? { pattern: field.pattern } : {}),
+        ...(field.pattern ? { pattern: anchorPattern(field.pattern) } : {}),
         ...(field.maxLength !== undefined ? { maxLength: field.maxLength } : {}),
       };
   }

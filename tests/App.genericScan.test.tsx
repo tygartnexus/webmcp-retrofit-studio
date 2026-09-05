@@ -28,8 +28,9 @@ describe("generic fixture scan (preview only)", () => {
     expect(within(excluded).getByText(/presence ceremony/i)).toBeInTheDocument();
     expect(within(excluded).getByText(/1 credential field and 1 hidden field excluded/)).toBeInTheDocument();
 
-    expect(screen.getByRole("status")).toHaveTextContent(/Preview only/);
+    expect(screen.getByRole("status")).toHaveTextContent(/Approval applies only to this proposal version/);
     expect(screen.queryByRole("button", { name: "Approve for preview" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve for runtime" })).toBeEnabled();
   });
 
   it("proposes nothing for a login page and says why", async () => {

@@ -28,12 +28,17 @@ import {
 } from "lucide-react";
 import { BookingPreview, type DraftSource } from "./screens/BookingPreview";
 import { GenericCandidateScreen } from "./screens/GenericCandidates";
-import { GENERIC_FIXTURES } from "./fixtures/genericFixtures";
-import { scanHtml, type GenericScanResult } from "./discovery/scanHtml";
+import { GenericExportScreen } from "./screens/generic/GenericExportScreen";
+import { GenericRuntimeScreen } from "./screens/generic/GenericRuntimeScreen";
+import { GenericValidateScreen } from "./screens/generic/GenericValidateScreen";
 import {
-  inferGenericCapabilities,
-  type GenericProposal,
-} from "./discovery/inferGenericCapabilities";
+  useGenericFlow,
+  type GenericOutcome,
+  type GenericScreen,
+} from "./screens/generic/useGenericFlow";
+import { GENERIC_FIXTURES } from "./fixtures/genericFixtures";
+import { scanHtml } from "./discovery/scanHtml";
+import { inferGenericCapabilities } from "./discovery/inferGenericCapabilities";
 import {
   createWebAuthnPresenceVerifier,
   type HumanPresenceVerifier,
@@ -111,11 +116,6 @@ const SCAN_SOURCES: readonly ScanSource[] = Object.freeze([
     Object.freeze({ id: fixture.id, title: `${fixture.title} (generic scan, preview only)` }),
   ),
 ]);
-
-interface GenericScanOutcome {
-  scan: GenericScanResult;
-  proposal: GenericProposal;
-}
 type ReviewDecision = "pending" | "approved" | "rejected";
 type RegistrationState =
   | "idle"
@@ -1311,9 +1311,10 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
   const exportRequestIdRef = useRef(0);
   const [authorized, setAuthorized] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const scanningRef = useRef(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [sourceId, setSourceId] = useState(BOOKING_SOURCE_ID);
-  const [generic, setGeneric] = useState<GenericScanOutcome | null>(null);
+  const [generic, setGeneric] = useState<GenericOutcome | null>(null);
   const [mode, setMode] = useState<ResponseModeId>("accuracy");
   const [decision, setDecision] = useState<ReviewDecision>("pending");
   const [registration, setRegistration] = useState<RegistrationState>("idle");
@@ -1340,7 +1341,7 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
   const previewReady = workflow.preview !== null;
   const validationPassed = workflow.validation?.status === "passed";
   const exportReady = validationPassed && liveUatRecorded;
-  const runtimeActive = screen === "validate";
+  const runtimeActive = !generic && screen === "validate";
 
   const handleDraftStaged = useCallback((nextDraft: BookingDraft) => {
     setDraft(nextDraft);
@@ -1352,6 +1353,13 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
     if (typeof document === "undefined") return undefined;
     return document.modelContext;
   }, []);
+
+  const genericFlow = useGenericFlow(generic, {
+    presenceVerifier: verifier,
+    modelContext,
+    runtimeActive: generic !== null && (screen === "preview" || screen === "validate"),
+  });
+  const resetGenericFlow = genericFlow.reset;
 
   useEffect(() => {
     if (!runtimeActive) {
@@ -1437,15 +1445,17 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
   }, []);
 
   const handleScan = useCallback(() => {
-    if (!authorized || scanning) return;
+    if (!authorized || scanningRef.current) return;
+    scanningRef.current = true;
     exportRequestIdRef.current += 1;
     setScanning(true);
     setScanError(null);
+    resetGenericFlow();
     const fixture = GENERIC_FIXTURES.find((candidate) => candidate.id === sourceId);
     const run = fixture
       ? scanHtml(fixture).then(async (scan) => {
           const proposal = await inferGenericCapabilities(scan);
-          setGeneric({ scan, proposal });
+          setGeneric({ snapshot: fixture, scan, proposal });
           setWorkflow(createRetrofitWorkflow());
         })
       : rescanOwnedFixture(workflow).then((nextWorkflow) => {
@@ -1460,8 +1470,11 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
       .catch(() => {
         setScanError("The inert snapshot scan could not complete; no evidence was retained.");
       })
-      .finally(() => setScanning(false));
-  }, [authorized, resetDownstream, scanning, sourceId, workflow]);
+      .finally(() => {
+        scanningRef.current = false;
+        setScanning(false);
+      });
+  }, [authorized, resetDownstream, resetGenericFlow, sourceId, workflow]);
 
   const handleApprove = useCallback(() => {
     if (approved) return;
@@ -1521,6 +1534,12 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
       exportRequestIdRef.current += 1;
       setExportDownloading(false);
       setExportError(null);
+    }
+    if (generic) {
+      if (nextScreen !== "scan" && !genericFlow.canEnter(nextScreen as GenericScreen)) return;
+      if (nextScreen === "export") genericFlow.prepareExport();
+      setScreen(nextScreen);
+      return;
     }
     if (nextScreen === "candidates" && !workflow.scan) return;
     if (nextScreen === "preview") {
@@ -1637,12 +1656,12 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
       <div className={customerView ? "app-body no-rail" : "app-body"}>
         {!customerView && (
         <StepRail
-          approved={approved}
+          approved={approved || genericFlow.approved}
           onNavigate={navigate}
-          previewReady={previewReady}
+          previewReady={previewReady || genericFlow.approved}
           scanComplete={workflow.scan !== null || generic !== null}
           screen={screen}
-          validated={exportReady}
+          validated={exportReady || genericFlow.validated}
         />
         )}
         <main>
@@ -1659,11 +1678,27 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
           )}
           {screen === "candidates" && generic && (
             <GenericCandidateScreen
+              approved={genericFlow.approved}
+              onApprove={() => {
+                genericFlow.approve();
+                setScreen("preview");
+              }}
               onBack={() => setScreen("scan")}
+              onReject={() => {
+                genericFlow.reject();
+                setScreen("scan");
+              }}
               proposal={generic.proposal}
               scan={generic.scan}
             />
           )}
+          {screen === "preview" && generic && (
+            <GenericRuntimeScreen flow={genericFlow} onContinue={() => navigate("validate")} />
+          )}
+          {screen === "validate" && generic && (
+            <GenericValidateScreen flow={genericFlow} onContinue={() => navigate("export")} />
+          )}
+          {screen === "export" && generic && <GenericExportScreen flow={genericFlow} />}
           {screen === "candidates" && !generic && workflow.scan && candidateReviewModel && (
             <CandidateScreen
               decision={decision}
@@ -1675,7 +1710,7 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
               scanHash={workflow.scan.scanHash}
             />
           )}
-          {screen === "preview" && workflow.proposal && workflow.preview && (
+          {!generic && screen === "preview" && workflow.proposal && workflow.preview && (
             <PreviewScreen
               draft={draft}
               onContinue={lockForValidation}
@@ -1684,7 +1719,7 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
               versionHash={workflow.proposal.versionHash}
             />
           )}
-          {screen === "validate" && (
+          {!generic && screen === "validate" && (
             <ValidateScreen
               presenceReceipt={presenceReceipt}
               presenceVerifier={verifier}
@@ -1705,7 +1740,7 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
               validationRunning={validationRunning}
             />
           )}
-          {screen === "export" && exportBundle && (
+          {!generic && screen === "export" && exportBundle && (
             <ExportScreen
               approved={exportApproved}
               bundle={exportBundle}
