@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebMCP Agent Console</title>
+    <style>
+      :root {
+        --ink: #15323b;
+        --muted: #65777c;
+        --teal: #0b8b83;
+        --teal-soft: #e2f4f1;
+        --warning: #a96713;
+        --warning-soft: #fff4da;
+        --danger: #a5443b;
+        --border: #d8e1df;
+      }
+      body {
+        width: 420px;
+        margin: 0;
+        padding: 14px;
+        color: var(--ink);
+        font: 12px/1.45 system-ui, sans-serif;
+        background: #f2f5f4;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      p {
+        margin: 0 0 10px;
+        color: var(--muted);
+      }
+      ul {
+        margin: 0 0 10px;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+        max-height: 180px;
+        overflow: auto;
+      }
+      li button {
+        width: 100%;
+        text-align: left;
+        padding: 8px 10px;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+        font: inherit;
+      }
+      li button[aria-pressed="true"] {
+        border-color: var(--teal);
+        background: var(--teal-soft);
+      }
+      code {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 11px;
+      }
+      .chip {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .read { color: #086d68; background: var(--teal-soft); }
+      .write { color: var(--warning); background: var(--warning-soft); }
+      label {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 8px;
+        font-size: 10px;
+        font-weight: 700;
+        color: #496269;
+      }
+      textarea {
+        min-height: 80px;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 11px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .primary {
+        padding: 8px 12px;
+        color: #fff;
+        background: var(--teal);
+        border: 0;
+        border-radius: 7px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .primary:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      pre {
+        margin: 10px 0 0;
+        padding: 8px;
+        max-height: 200px;
+        overflow: auto;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        font-size: 10.5px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      pre.error {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      .note {
+        margin-top: 10px;
+        font-size: 10.5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebMCP Agent Console</h1>
+    <p id="status">Looking for tools on this page…</p>
+    <ul id="tools" aria-label="Tools on this page"></ul>
+    <label>
+      Input JSON
+      <textarea id="input" aria-label="Input JSON">{}</textarea>
+    </label>
+    <div class="actions">
+      <button class="primary" id="call" type="button" disabled>Call tool</button>
+      <span id="selected" class="muted"></span>
+    </div>
+    <pre id="output" hidden></pre>
+    <p class="note">
+      Write tools change page state. A retrofitted page stages the change and asks a person to confirm it on the
+      page itself; this console cannot confirm on their behalf.
+    </p>
+    <script src="popup-logic.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

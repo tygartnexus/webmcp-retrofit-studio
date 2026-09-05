@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "WebMCP Agent Console",
+  "version": "0.2.0",
+  "description": "Discovers a page's WebMCP tools and calls them with typed input. Companion to WebMCP Retrofit Studio.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_title": "WebMCP Agent Console",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["shim.js", "main-world.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ]
+}

@@ -10,7 +10,7 @@
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:coverage && npm run build && npm run test:e2e && npm audit --audit-level=high",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
-    "lint": "oxlint src tests scripts vite.config.ts playwright.config.ts",
+    "lint": "oxlint src tests scripts extension vite.config.ts playwright.config.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test"
