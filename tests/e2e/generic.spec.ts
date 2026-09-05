@@ -17,8 +17,8 @@ async function installWebMcpStub(page: import("@playwright/test").Page) {
 }
 
 async function scanGeneric(page: import("@playwright/test").Page, fixtureId: string) {
+  await page.getByRole("combobox", { name: "Source" }).selectOption(fixtureId);
   await page.getByRole("checkbox", { name: /authorized to analyze this fixture/i }).check();
-  await page.getByRole("combobox", { name: "Fixture" }).selectOption(fixtureId);
   await page.getByRole("button", { name: "Scan owned fixture" }).click();
   await expect(page.getByRole("heading", { name: "Generic candidate capabilities" })).toBeVisible();
 }
@@ -69,6 +69,23 @@ test("generic flow: scan a contact form, approve, call the tool, stage, validate
   await page.getByRole("button", { name: "Download package" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^webmcp-generic-retrofit-[a-f0-9]{12}\.json$/);
+  await noHorizontalOverflow(page);
+});
+
+test("generic flow: pasted owner HTML is scanned inertly and its scripts never run", async ({ page }) => {
+  await installWebMcpStub(page);
+  await page.goto("/");
+  await page.getByRole("combobox", { name: "Source" }).selectOption("owner-html");
+  await page.getByRole("checkbox", { name: /own or am authorized to analyze this page/i }).check();
+  await page.getByRole("textbox", { name: "Page HTML" }).fill(
+    '<title>Parts desk</title><h1>Find a part</h1><form method="get"><label for="q">Part number</label><input id="q" name="q" type="search"><button>Search</button></form><script>window.__ranScript = true</script>',
+  );
+  await page.getByRole("button", { name: "Scan pasted page" }).click();
+
+  await expect(page.getByRole("heading", { name: "Generic candidate capabilities" })).toBeVisible();
+  await expect(page.getByText(/inert scan of “Parts desk”/)).toBeVisible();
+  await expect(page.getByRole("region", { name: /Proposed tools \(1\)/ })).toContainText("search_part_number");
+  expect(await page.evaluate(() => (window as unknown as { __ranScript?: boolean }).__ranScript)).toBeUndefined();
   await noHorizontalOverflow(page);
 });
 

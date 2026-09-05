@@ -42,9 +42,10 @@ The confirmation control requires a currently staged draft and displays its exac
 
 ### Generic retrofit flow
 
-The Scan screen offers a fixture picker. The booking fixture runs the
+The Scan screen offers a source picker. The booking fixture runs the
 original hand-modelled flow. The other fixtures (contact form, catalog
-search, orders table, checkout, login) run the generic flow:
+search, orders table, checkout, login) and your own pasted page HTML run
+the generic flow:
 
 1. **Scan.** A DOMParser-only inert scan records forms, fields, buttons, and
    tables with a safety envelope: scripts ignored, credential and hidden

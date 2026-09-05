@@ -7,7 +7,8 @@ async function authorize(user: ReturnType<typeof userEvent.setup>) {
 }
 
 async function scanFixture(user: ReturnType<typeof userEvent.setup>, fixtureId: string) {
-  await user.selectOptions(screen.getByRole("combobox", { name: "Fixture" }), fixtureId);
+  await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), fixtureId);
+  await authorize(user);
   await user.click(screen.getByRole("button", { name: "Scan owned fixture" }));
 }
 
@@ -15,7 +16,6 @@ describe("generic fixture scan (preview only)", () => {
   it("scans the checkout fixture into a proposal that excludes the finalizing order and offers no approval", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await authorize(user);
     await scanFixture(user, "synthetic-checkout-v1");
 
     await screen.findByRole("heading", { name: "Generic candidate capabilities" });
@@ -36,7 +36,6 @@ describe("generic fixture scan (preview only)", () => {
   it("proposes nothing for a login page and says why", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await authorize(user);
     await scanFixture(user, "synthetic-login-v1");
 
     await screen.findByRole("heading", { name: "Generic candidate capabilities" });
@@ -47,7 +46,6 @@ describe("generic fixture scan (preview only)", () => {
   it("returns to the full booking flow when the booking fixture is scanned again", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await authorize(user);
     await scanFixture(user, "synthetic-data-table-v1");
     await screen.findByRole("heading", { name: "Generic candidate capabilities" });
 

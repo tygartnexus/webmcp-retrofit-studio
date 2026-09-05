@@ -188,13 +188,34 @@ scripts is part of the safety envelope the owner reviews. The runtime slice
 never injects scanned HTML into the live document, so the guard is not
 needed there either. Revisit if a future slice renders scanned HTML.
 
+## Owner-supplied HTML
+
+The Scan screen's source picker includes "Paste your own page HTML".
+`createOwnerSnapshot` trims the markup, refuses empty, oversized (over two
+million characters), or non-HTML input, derives the snapshot id and revision
+from the content hash, and reads the title from an inert DOMParser copy,
+falling back to the first heading, then the owner's label. The markup is
+never inserted into the live document. The same generic flow then applies.
+Choosing a different source clears the authorization tick and any scan
+error, because the attestation wording differs per source. Pasted text stays
+in the textarea across source switches; it lives only in this tab and is
+never stored.
+
+## Agent-side companion
+
+`extension/` holds an MV3 shell that installs a clean-room registry as
+`document.modelContext` in browsers without native WebMCP, mirrors native
+registrations when present, and lets a person list and call a page's tools.
+Its README states the trust model: tool lists and hints are page claims.
+
 ## Next slices
 
-1. Owner-supplied HTML: paste or upload a page instead of a bundled fixture,
-   still parsed inertly.
-2. Agent-side companion (option B): a browser extension that discovers and
-   calls tools on retrofitted pages.
-3. Split App.tsx into screen modules.
+1. Split App.tsx into screen modules (ScanScreen is already extracted).
+2. Confirmation drift check: at confirm time, compare a staged change's
+   fields with the live control values and refuse on mismatch, in addition
+   to the current supersede-on-later-write rule.
+3. Widen the extension's injection scope deliberately, with the trust model
+   in view.
 
 ## Related work and attribution
 

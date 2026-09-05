@@ -37,8 +37,8 @@ function installToolCapture(): Map<string, WebMCP.ModelContextTool> {
 }
 
 async function scanGeneric(user: ReturnType<typeof userEvent.setup>, fixtureId: string) {
+  await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), fixtureId);
   await user.click(screen.getByRole("checkbox", { name: /authorized to analyze this fixture/i }));
-  await user.selectOptions(screen.getByRole("combobox", { name: "Fixture" }), fixtureId);
   await user.click(screen.getByRole("button", { name: "Scan owned fixture" }));
   await screen.findByRole("heading", { name: "Generic candidate capabilities" });
 }

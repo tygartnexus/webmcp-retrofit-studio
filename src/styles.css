@@ -2382,3 +2382,29 @@ code,
   color: var(--teal-dark);
   font-size: 11px;
 }
+
+/* Owner-supplied HTML on the Scan screen */
+
+.scan-card-body > label {
+  display: grid;
+  gap: 7px;
+  color: #496269;
+  font-size: 9px;
+  font-weight: 740;
+}
+
+.scan-card-body input:not([type="checkbox"]),
+.scan-card-body textarea {
+  padding: 9px 11px;
+  color: #213f47;
+  background: #f8faf9;
+  border: 1px solid #cbd9d6;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.scan-card-body textarea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px;
+  resize: vertical;
+}

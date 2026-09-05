@@ -19,7 +19,6 @@ import {
   Info,
   LockKeyhole,
   PackageCheck,
-  RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -28,6 +27,8 @@ import {
 } from "lucide-react";
 import { BookingPreview, type DraftSource } from "./screens/BookingPreview";
 import { GenericCandidateScreen } from "./screens/GenericCandidates";
+import { BOOKING_SOURCE_ID, OWNER_SOURCE_ID, ScanScreen } from "./screens/ScanScreen";
+import { createOwnerSnapshot, OwnerSnapshotError } from "./fixtures/ownerSnapshot";
 import { GenericExportScreen } from "./screens/generic/GenericExportScreen";
 import { GenericRuntimeScreen } from "./screens/generic/GenericRuntimeScreen";
 import { GenericValidateScreen } from "./screens/generic/GenericValidateScreen";
@@ -101,21 +102,6 @@ import {
 
 type Screen = "scan" | "candidates" | "preview" | "validate" | "export";
 
-/** The bundled booking fixture drives the full retrofit flow. */
-const BOOKING_SOURCE_ID = "legacy-booking";
-
-interface ScanSource {
-  id: string;
-  title: string;
-}
-
-/** Generic fixtures scan inertly into a preview-only proposal. */
-const SCAN_SOURCES: readonly ScanSource[] = Object.freeze([
-  Object.freeze({ id: BOOKING_SOURCE_ID, title: "Legacy booking (full retrofit flow)" }),
-  ...GENERIC_FIXTURES.map((fixture) =>
-    Object.freeze({ id: fixture.id, title: `${fixture.title} (generic scan, preview only)` }),
-  ),
-]);
 type ReviewDecision = "pending" | "approved" | "rejected";
 type RegistrationState =
   | "idle"
@@ -625,128 +611,6 @@ function CandidateScreen({
           >
             {approved ? <Check size={17} /> : <ArrowRight size={17} />}
             {approved ? "Approved for preview" : "Approve for preview"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ScanScreen({
-  authorized,
-  scanning,
-  error,
-  sourceId,
-  onAuthorizationChange,
-  onSourceChange,
-  onScan,
-}: {
-  authorized: boolean;
-  scanning: boolean;
-  error: string | null;
-  sourceId: string;
-  onAuthorizationChange: (authorized: boolean) => void;
-  onSourceChange: (sourceId: string) => void;
-  onScan: () => void;
-}) {
-  const bookingSelected = sourceId === BOOKING_SOURCE_ID;
-  return (
-    <div className="screen-content scan-screen">
-      <div className="screen-intro">
-        <div>
-          <p className="eyebrow">1 of 5 · Scan</p>
-          <h1>Scan owned fixture</h1>
-          <p>Inspect a bundled synthetic snapshot without contacting an external site.</p>
-        </div>
-        <span className="snapshot-chip">
-          <ShieldCheck size={16} /> Snapshot-only boundary
-        </span>
-      </div>
-
-      <div className="scan-workbench">
-        <section className="scan-card" aria-labelledby="scan-source-heading">
-          <div className="column-title">
-            <div>
-              <p className="eyebrow">Owner-controlled source</p>
-              <h2 id="scan-source-heading">Bundled synthetic snapshot</h2>
-            </div>
-            <Globe2 size={20} />
-          </div>
-          <div className="scan-card-body">
-            <label>
-              Fixture
-              <select onChange={(event) => onSourceChange(event.target.value)} value={sourceId}>
-                {SCAN_SOURCES.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="muted fixture-note">
-              {bookingSelected
-                ? "https://legacy-booking.test"
-                : "Bundled synthetic HTML. The scan proposes tools for review but nothing registers or runs."}
-            </p>
-            <label className="authorization-check">
-              <input
-                checked={authorized}
-                onChange={(event) => onAuthorizationChange(event.target.checked)}
-                type="checkbox"
-              />
-              <span>
-                <strong>I am authorized to analyze this fixture.</strong>
-                This approval is limited to the bundled, entrant-controlled snapshot.
-              </span>
-            </label>
-            <div className="scan-boundary-callout">
-              <ShieldCheck size={20} />
-              <div>
-                <strong>No credentials, remote fetches, or scripts</strong>
-                <span>The parser observes structure inertly and keeps only redacted evidence.</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="scan-card" aria-labelledby="scan-capture-heading">
-          <div className="column-title">
-            <div>
-              <p className="eyebrow">Deterministic intake</p>
-              <h2 id="scan-capture-heading">What the scan retains</h2>
-            </div>
-            <Search size={20} />
-          </div>
-          <ul className="retention-list">
-            <li><CheckCircle2 size={17} /> Control roles and field names</li>
-            <li><CheckCircle2 size={17} /> Form and action relationships</li>
-            <li><CheckCircle2 size={17} /> Reversible versus final boundaries</li>
-            <li><CheckCircle2 size={17} /> A SHA-256 source fingerprint</li>
-          </ul>
-          <div className="unknowns-panel">
-            <HelpCircle size={18} />
-            <div>
-              <strong>Intentionally unknown</strong>
-              <span>Production authorization, inventory, billing, and side effects are not inferred.</span>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="decision-bar">
-        <div className={`decision-status${error ? " has-error" : ""}`} role={error ? "alert" : undefined}>
-          {error ? <AlertTriangle size={18} /> : <Info size={18} />}
-          {error ?? "Scan analyzes only the included fixture snapshot"}
-        </div>
-        <div className="decision-actions">
-          <button
-            className="primary-button"
-            disabled={!authorized || scanning}
-            onClick={onScan}
-            type="button"
-          >
-            {scanning ? <RefreshCw className="spin" size={17} /> : <Search size={17} />}
-            {scanning ? "Scanning owned fixture" : "Scan owned fixture"}
           </button>
         </div>
       </div>
@@ -1314,6 +1178,8 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
   const scanningRef = useRef(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [sourceId, setSourceId] = useState(BOOKING_SOURCE_ID);
+  const [ownerHtml, setOwnerHtml] = useState("");
+  const [ownerLabel, setOwnerLabel] = useState("");
   const [generic, setGeneric] = useState<GenericOutcome | null>(null);
   const [mode, setMode] = useState<ResponseModeId>("accuracy");
   const [decision, setDecision] = useState<ReviewDecision>("pending");
@@ -1451,11 +1317,18 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
     setScanning(true);
     setScanError(null);
     resetGenericFlow();
+    const ownerSelected = sourceId === OWNER_SOURCE_ID;
     const fixture = GENERIC_FIXTURES.find((candidate) => candidate.id === sourceId);
-    const run = fixture
-      ? scanHtml(fixture).then(async (scan) => {
+    const snapshot = ownerSelected
+      ? createOwnerSnapshot(ownerHtml, { fallbackTitle: ownerLabel })
+      : fixture
+        ? Promise.resolve(fixture)
+        : null;
+    const run = snapshot
+      ? snapshot.then(async (source) => {
+          const scan = await scanHtml(source);
           const proposal = await inferGenericCapabilities(scan);
-          setGeneric({ snapshot: fixture, scan, proposal });
+          setGeneric({ snapshot: source, scan, proposal });
           setWorkflow(createRetrofitWorkflow());
         })
       : rescanOwnedFixture(workflow).then((nextWorkflow) => {
@@ -1467,14 +1340,26 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
         resetDownstream();
         setScreen("candidates");
       })
-      .catch(() => {
-        setScanError("The inert snapshot scan could not complete; no evidence was retained.");
+      .catch((error: unknown) => {
+        // Only the paste helper's own validation messages are shown; anything else stays generic.
+        setScanError(
+          error instanceof OwnerSnapshotError
+            ? error.message
+            : "The inert snapshot scan could not complete; no evidence was retained.",
+        );
       })
       .finally(() => {
         scanningRef.current = false;
         setScanning(false);
       });
-  }, [authorized, resetDownstream, resetGenericFlow, sourceId, workflow]);
+  }, [authorized, ownerHtml, ownerLabel, resetDownstream, resetGenericFlow, sourceId, workflow]);
+
+  // The attestation wording differs per source, so a new source needs a fresh tick.
+  const handleSourceChange = useCallback((nextSourceId: string) => {
+    setSourceId(nextSourceId);
+    setAuthorized(false);
+    setScanError(null);
+  }, []);
 
   const handleApprove = useCallback(() => {
     if (approved) return;
@@ -1670,8 +1555,12 @@ export function App({ presenceVerifier, view }: AppProps = {}) {
               authorized={authorized}
               error={scanError}
               onAuthorizationChange={setAuthorized}
+              onOwnerHtmlChange={setOwnerHtml}
+              onOwnerLabelChange={setOwnerLabel}
               onScan={handleScan}
-              onSourceChange={setSourceId}
+              onSourceChange={handleSourceChange}
+              ownerHtml={ownerHtml}
+              ownerLabel={ownerLabel}
               scanning={scanning}
               sourceId={sourceId}
             />

@@ -9,6 +9,11 @@ import type { HtmlSnapshot } from "./genericFixtures";
  */
 
 export const OWNER_HTML_MAX_CHARS = 2_000_000;
+
+/** Validation failures of the pasted markup; safe to show the owner verbatim. */
+export class OwnerSnapshotError extends Error {
+  override readonly name = "OwnerSnapshotError";
+}
 export const OWNER_SOURCE_PREFIX = "owner-";
 
 export interface OwnerSnapshotOptions {
@@ -29,11 +34,11 @@ export async function createOwnerSnapshot(
   options: OwnerSnapshotOptions = {},
 ): Promise<HtmlSnapshot> {
   const trimmed = html.trim();
-  if (trimmed.length === 0) throw new Error("Pasted HTML is empty");
+  if (trimmed.length === 0) throw new OwnerSnapshotError("Pasted HTML is empty");
   if (trimmed.length > OWNER_HTML_MAX_CHARS) {
-    throw new Error(`Pasted HTML is too large; the limit is ${OWNER_HTML_MAX_CHARS.toLocaleString()} characters`);
+    throw new OwnerSnapshotError(`Pasted HTML is too large; the limit is ${OWNER_HTML_MAX_CHARS.toLocaleString()} characters`);
   }
-  if (!/<[a-z!][^>]*>/i.test(trimmed)) throw new Error("Pasted text does not look like HTML");
+  if (!/<[a-z!][^>]*>/i.test(trimmed)) throw new OwnerSnapshotError("Pasted text does not look like HTML");
   const hash = await sha256Hex(trimmed);
   const title = readTitle(trimmed) ?? options.fallbackTitle?.trim() ?? "Pasted page";
   return Object.freeze({
