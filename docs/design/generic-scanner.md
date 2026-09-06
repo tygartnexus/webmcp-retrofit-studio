@@ -40,7 +40,9 @@ HtmlSnapshot ──scanHtml──▶ GenericScanResult ──inferGenericCapabil
 
 Files: `src/fixtures/genericFixtures.ts`, `src/discovery/scanHtml.ts`,
 `src/discovery/inferGenericCapabilities.ts`,
-`src/screens/GenericCandidates.tsx`.
+`src/screens/GenericCandidates.tsx`. The booking flow's screens live in
+`src/screens/booking/` and shared chrome in `src/components/`; `src/App.tsx`
+is orchestration only.
 
 ### Observation
 
@@ -210,11 +212,10 @@ Its README states the trust model: tool lists and hints are page claims.
 
 ## Next slices
 
-1. Split App.tsx into screen modules (ScanScreen is already extracted).
-2. Confirmation drift check: at confirm time, compare a staged change's
+1. Confirmation drift check: at confirm time, compare a staged change's
    fields with the live control values and refuse on mismatch, in addition
    to the current supersede-on-later-write rule.
-3. Widen the extension's injection scope deliberately, with the trust model
+2. Widen the extension's injection scope deliberately, with the trust model
    in view.
 
 ## Related work and attribution
