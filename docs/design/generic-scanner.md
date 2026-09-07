@@ -147,10 +147,12 @@ parameter is required, so a tool call always moves the control to a kept
 option and the description says the default was withheld; a preselected
 destructive checkbox that would vanish as a parameter makes the form an
 action menu instead. An option without a value attribute submits its
-text, which is its key. A multiple select is an array parameter like a
-checkbox group, and applying it selects exactly the chosen options. An
-option key longer than 200 characters is not offered, so the schema stays
-bounded. A first-person statement ("I confirm I am over 18", "I agree") is
+text with ASCII whitespace collapsed, exactly as the browser computes it,
+and that is its key; a disabled option, or one in a disabled optgroup, is
+never offered. A multiple select is an array parameter like a checkbox
+group, and applying it selects exactly the chosen options. An option key
+longer than 200 characters is not offered, so the schema stays bounded,
+and a select left with nothing to offer is not a parameter at all. A first-person statement ("I confirm I am over 18", "I agree") is
 consent and is exempt unless it still carries a destructive verb once
 the confirm family is set aside ("I want to delete my account" is
 judged), while "Confirm order" is judged, and "Confirm deletion" or "Confirm cancellation" finalize because the

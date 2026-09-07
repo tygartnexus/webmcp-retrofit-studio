@@ -129,9 +129,19 @@ export interface ChoiceOption {
   preselected: boolean;
 }
 
-/** The key a select option submits: its value attribute, else its text. */
+/**
+ * The key a select option submits: its value attribute, else its text with ASCII whitespace
+ * stripped and collapsed, exactly as the browser computes the value (zero-width and no-break
+ * characters stay, so the key still matches the option when applied).
+ */
 export function optionKey(option: Element): string {
-  return option.hasAttribute("value") ? (option.getAttribute("value") ?? "") : accessibleContent(option);
+  if (option.hasAttribute("value")) return option.getAttribute("value") ?? "";
+  return (option.textContent ?? "").replace(/[\t\n\f\r ]+/g, " ").trim();
+}
+
+/** A disabled option, or one inside a disabled optgroup, is never submitted, so it is never offered. */
+export function isOfferedOption(option: Element): boolean {
+  return !option.hasAttribute("disabled") && !option.closest("optgroup")?.hasAttribute("disabled");
 }
 
 /**

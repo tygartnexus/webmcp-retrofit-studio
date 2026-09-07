@@ -1,6 +1,7 @@
 import { inferGenericCapabilities } from "../src/discovery/inferGenericCapabilities";
 import { scanHtml } from "../src/discovery/scanHtml";
 import { createOwnerSnapshot } from "../src/fixtures/ownerSnapshot";
+import { createGenericToolDefinitions } from "../src/runtime/genericRuntime";
 import { runGenericChecks } from "../src/validation/runGenericChecks";
 
 /**
@@ -576,5 +577,37 @@ describe("R97: an overlong option key is not offered", () => {
       `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option>${long}</option><option value="q">Question</option></select><button>Send message</button></form>`,
     );
     expect(scan.capabilities[0].fields.find((f) => f.name === "reason")?.options).toEqual(["q"]);
+  });
+});
+
+describe("R98: a select offers only what the browser would submit", () => {
+  const page = (select: string) => `<form method="post" action="/x"><input name="n" aria-label="Name">${select}<button>Send message</button></form>`;
+
+  it("is not a parameter when every key is over budget, and skips disabled options", async () => {
+    const long = "Z".repeat(201);
+    const over = await scanOwner(page(`<select name="reason" aria-label="Reason"><option>${long}</option><option>${long}X</option></select>`));
+    expect(over.capabilities[0].fields.map((f) => f.name)).toEqual(["n"]);
+    expect(Object.keys((await inferGenericCapabilities(over)).tools[0].inputSchema.properties)).toEqual(["n"]);
+    const disabled = await scanOwner(
+      page(`<select name="mode" aria-label="Mode"><option value="k">Keep</option><option value="x" disabled>Locked</option><optgroup label="Later" disabled><option value="y">Soon</option></optgroup></select>`),
+    );
+    expect(disabled.capabilities[0].fields.find((f) => f.name === "mode")?.options).toEqual(["k"]);
+  });
+
+  it("keeps the browser's value for a text key and applies it", async () => {
+    const html = page(`<select name="mode" aria-label="Mode"><option>Ke&#8203;ep</option><option>Non&nbsp;breaking</option></select>`);
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields.find((f) => f.name === "mode")?.options).toEqual(["Ke\u200Bep", "Non\u00A0breaking"]);
+    const proposal = await inferGenericCapabilities(scan);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const [tool] = createGenericToolDefinitions({ hostDocument: doc, scan, proposal, modelContext: undefined });
+    tool.execute({ n: "x", mode: "Non\u00A0breaking" }, { signal: new AbortController().signal });
+    expect(doc.querySelector("select")!.selectedIndex).toBe(1);
+  });
+
+  it("still makes a preselected destructive option the action when the select has nothing to offer", async () => {
+    const long = "Z".repeat(201);
+    const scan = await scanOwner(page(`<select name="mode" aria-label="Mode"><option selected>Delete my account ${long}</option><option>${long}</option></select>`));
+    expect(scan.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
   });
 });

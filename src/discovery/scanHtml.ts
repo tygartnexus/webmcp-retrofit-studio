@@ -3,7 +3,7 @@ import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
 import { formControls, isDisabledControl, ownedControls } from "./formOwner";
 import { classifyForm, destructiveName } from "./scanClassify";
-import { buttonNames, choiceNames, choiceOptions, clipTo, LABEL_BUDGET, labelFor, optionKey } from "./scanNames";
+import { buttonNames, choiceNames, choiceOptions, clipTo, isOfferedOption, LABEL_BUDGET, labelFor, optionKey } from "./scanNames";
 import { observeTable } from "./scanTable";
 import { clipLabel, text, visibleText } from "./scanText";
 import {
@@ -226,10 +226,18 @@ function observeField(control: Element, form: Element, formSelector: string, doc
   const min = numberAttribute(control, "min");
   const max = numberAttribute(control, "max");
   const maxLength = numberAttribute(control, "maxlength");
-  // An option without a value attribute submits its text; keys are unique and budgeted so a schema stays bounded.
+  // An option without a value attribute submits its text; keys are unique, offered only when the browser would
+  // submit them, and budgeted so a schema stays bounded.
   const options =
     control.tagName === "SELECT"
-      ? [...new Set([...control.querySelectorAll("option")].map(optionKey).filter((value) => value !== "" && value.length <= OPTION_KEY_BUDGET))]
+      ? [
+          ...new Set(
+            [...control.querySelectorAll("option")]
+              .filter(isOfferedOption)
+              .map(optionKey)
+              .filter((value) => value !== "" && value.length <= OPTION_KEY_BUDGET),
+          ),
+        ]
       : undefined;
   return {
     ...field,
@@ -576,17 +584,21 @@ function destructiveChoices(controls: readonly Element[], form: Element): Map<st
  */
 function withholdDestructiveChoices(fields: readonly FieldObservation[], controls: readonly Element[], form: Element): WithheldChoices {
   const found = destructiveChoices(controls, form);
+  // A select with nothing to offer (every key over budget, disabled, or a placeholder) is not a parameter either,
+  // unless the page preselects a destructive option in it, which makes the form an action menu.
+  const bare = (field: FieldObservation) => field.inputType === "select" && (field.options ?? []).length === 0;
   const vanishes = (field: FieldObservation, entry: DestructiveEntry) =>
-    field.inputType === "checkbox" && (!field.options || field.options.every((value) => entry.values.includes(value)));
+    (field.inputType === "checkbox" && (!field.options || field.options.every((value) => entry.values.includes(value)))) ||
+    bare(field);
   const emptied = fields.find((field) => {
     const entry = found.get(field.name);
     if (!entry) return false;
-    if (field.inputType === "checkbox") return vanishes(field, entry) && entry.preselected;
+    if (field.inputType === "checkbox" || bare(field)) return vanishes(field, entry) && entry.preselected;
     return (field.options ?? []).every((value) => entry.values.includes(value));
   });
   const kept = fields.flatMap((field) => {
     const entry = found.get(field.name);
-    if (!entry) return [field];
+    if (!entry) return bare(field) ? [] : [field];
     // A lone checkbox is a boolean with no options; a destructive one is simply not a parameter.
     if (vanishes(field, entry)) return [];
     const options = (field.options ?? []).filter((value) => !entry.values.includes(value));
