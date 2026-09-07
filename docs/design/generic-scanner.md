@@ -117,10 +117,16 @@ are never parameters, actions, or envelope counts, and a nameless enabled
 Enter-submitting input still blocks implicit submission. The form's default
 button is its first submit-type control, disabled or not: when it is
 disabled, Enter submits nothing, so no default action is proposed, while a
-disabled credential or finalize default is still listed as excluded. Risk
+disabled credential or finalize default is still listed as excluded. A
+hidden default button still fires on Enter, so it is named from its own
+content and judged like any other; a hidden "Delete account" is excluded,
+not replaced by a generic "Submit". The rendered text a button carries can
+include an icon-font ligature or a tooltip, so a safe action beside an
+aria-hidden "delete" glyph is excluded as well; that is the safe direction,
+and the owner sees it in the excluded list. Risk
 is judged against every name a button carries (the accessible name, its
-aria-label, its content, and its rendered text including aria-hidden and
-screen-reader-only spans), so an ARIA override cannot turn a visible
+aria-label, its content, its title, and its rendered text including
+aria-hidden and screen-reader-only spans), so an ARIA override cannot turn a visible
 "Delete account" into a write tool.
 Skipped navigation buttons are counted from the controls each form owns.
 When a search field has its own read tool, or a GET submit button already
@@ -142,7 +148,9 @@ inline display:none or visibility:hidden, display-none classes (hidden,
 d-none, is-hidden), and script, style, template, textarea, and select
 content; screen-reader-only classes (sr-only, visually-hidden,
 screen-reader-text) hide text from sight only. Class names match
-case-sensitively, as CSS does, and zero-width characters are dropped. Text joins the way it
+case-sensitively, as CSS does; inline style is read per declaration
+(`!important` included); and zero-width characters are dropped from content
+and attributes alike. Text joins the way it
 renders: inline edges keep their whitespace and block elements and line
 breaks separate words, so "Delete&lt;br&gt;account" reads as "Delete account".
 Stylesheets are not evaluated, so text hidden only by an external rule under

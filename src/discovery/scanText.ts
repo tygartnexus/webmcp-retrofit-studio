@@ -37,7 +37,10 @@ function inlineDeclarations(element: Element): Map<string, string> {
   const declarations = new Map<string, string>();
   for (const declaration of (element.getAttribute("style") ?? "").toLowerCase().split(";")) {
     const separator = declaration.indexOf(":");
-    if (separator > 0) declarations.set(declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim());
+    if (separator > 0) {
+      const value = declaration.slice(separator + 1).replace(/!important\s*$/, "").trim();
+      declarations.set(declaration.slice(0, separator).trim(), value);
+    }
   }
   return declarations;
 }
@@ -81,24 +84,29 @@ function isExcludedFor(element: Element, audience: Audience): boolean {
   }
 }
 
-/** Raw text with rendering-shaped whitespace; callers collapse it. */
-function rawText(node: Node, audience: Audience): string {
+/**
+ * Raw text with rendering-shaped whitespace; callers collapse it. A root the
+ * caller asks about by name is read even when it is hidden itself: a hidden
+ * default submit button still fires on Enter, so its name still matters.
+ */
+function rawText(node: Node, audience: Audience, isRoot = false): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
   const element = node as Element;
-  if (isExcludedFor(element, audience)) return "";
+  if (!isRoot && isExcludedFor(element, audience)) return "";
   if (element.tagName === "IMG") return audience === "sighted" ? "" : ` ${element.getAttribute("alt") ?? ""} `;
   const inner = [...element.childNodes].map((child) => rawText(child, audience)).join("");
   return isBlock(element) ? ` ${inner} ` : inner;
 }
 
-function collapse(value: string): string {
+/** Whitespace collapsed and zero-width characters dropped; attributes and content alike go through this. */
+export function collapseText(value: string): string {
   return value.replace(ZERO_WIDTH_PATTERN, "").replace(/\s+/g, " ").trim();
 }
 
 /** Text a person can see: skips hidden elements and control values entirely. */
 export function visibleText(node: Node): string {
-  return collapse(rawText(node, "sighted"));
+  return collapseText(rawText(node, "sighted"));
 }
 
 /**
@@ -108,12 +116,12 @@ export function visibleText(node: Node): string {
  * referenced by aria-labelledby contributes even when hidden.
  */
 export function accessibleContent(node: Node, referenced = false): string {
-  return collapse(rawText(node, referenced ? "referenced" : "assistive"));
+  return collapseText(rawText(node, referenced ? "referenced" : "assistive", true));
 }
 
 /** Everything the page renders to anyone: aria-hidden and screen-reader-only text both count. */
 export function renderedText(node: Node): string {
-  return collapse(rawText(node, "rendered"));
+  return collapseText(rawText(node, "rendered", true));
 }
 
 export function clipLabel(value: string): string {

@@ -99,3 +99,59 @@ describe("R64: tools that share a label carry distinct titles", () => {
     expect(proposal.tools.filter((t) => t.riskClass === "read").map((t) => t.title)).toEqual(["Search Orders"]);
   });
 });
+
+describe("R65: zero-width characters in attributes are dropped too", () => {
+  it("keeps a finalize verb whole inside aria-label and title", async () => {
+    const aria = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button aria-label="Del&#8203;ete account">Go</button></form>`);
+    expect(aria.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    const title = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button title="Del&#8203;ete account"></button></form>`);
+    expect(title.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    const field = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="First&#8203; name"><button>Save</button></form>`);
+    expect(field.capabilities[0].fields[0].label).toBe("First name");
+  });
+});
+
+describe("R66: a title is judged even when an icon wins the label", () => {
+  it("excludes an icon button whose title finalizes and keeps one whose title is safe", async () => {
+    const remove = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button title="Delete account">✕</button></form>`);
+    expect(remove.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["✕", "finalize"]]);
+    const find = await scanOwner(`<form method="get" action="/q"><input type="search" name="q" aria-label="Q"><button title="Search orders">⌕</button></form>`);
+    expect(find.capabilities.map((c) => [c.actionLabel, c.kind])).toEqual([["⌕", "search"]]);
+  });
+});
+
+describe("R67: inline hiding survives !important and odd casing", () => {
+  it("hides text under display:none !important and DISPLAY : NONE", async () => {
+    const important = await scanOwner(post(`Save<span style="display:none !important"> and delete account</span>`));
+    expect(important.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save", "write"]]);
+    const shouting = await scanOwner(post(`Save<span style="DISPLAY : NONE"> and delete account</span>`));
+    expect(shouting.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save", "write"]]);
+  });
+});
+
+describe("R68: a hidden default submit is judged by its own content", () => {
+  it("lists a hidden finalize or credential default as excluded and names a hidden safe one", async () => {
+    for (const hiding of ["hidden", `style="display:none"`, `class="hidden"`]) {
+      const scan = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button ${hiding}>Delete account</button></form>`);
+      expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    }
+    const login = await scanOwner(`<form method="post" action="/x"><input name="u" aria-label="U"><button hidden>Log in</button></form>`);
+    expect(login.capabilities.map((c) => c.riskClass)).toEqual(["credential"]);
+    const save = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button hidden>Save</button></form>`);
+    expect(save.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save", "write"]]);
+  });
+});
+
+describe("R69: an ordinal title is itself kept unique", () => {
+  it("skips ordinals already taken by table titles or literal labels", async () => {
+    const table = (h: string) => `<table><thead><tr><th>${h}</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+    const tables = await inferGenericCapabilities(
+      await scanOwner(`<h2>Levels</h2>${table("A")}${table("B")}<form method="post" action="/x"><input name="a" aria-label="A"><button>Read Levels</button><button type="button">Read Levels</button></form>`),
+    );
+    expect(new Set(tables.tools.map((t) => t.title)).size).toBe(4);
+    const literal = await inferGenericCapabilities(
+      await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button>Save</button><button type="button">Preview</button><button type="button">Preview (2)</button><button type="button">Preview</button></form>`),
+    );
+    expect(literal.tools.map((t) => t.title)).toEqual(["Save", "Preview", "Preview (2)", "Preview (3)"]);
+  });
+});

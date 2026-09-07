@@ -298,11 +298,13 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>, tabl
  * same ordinal, so an agent reading titles can tell them apart too.
  */
 function withDistinctTitles(tools: readonly ProposedTool[]): ProposedTool[] {
-  const seen = new Map<string, number>();
+  const used = new Set<string>();
   return tools.map((tool) => {
-    const count = (seen.get(tool.title) ?? 0) + 1;
-    seen.set(tool.title, count);
-    return count === 1 ? tool : { ...tool, title: titled(tool.title, ` (${count})`) };
+    // An ordinal title can already exist (a table ordinal, or a literal "Preview (2)" label), so keep counting.
+    let title = tool.title;
+    for (let ordinal = 2; used.has(title); ordinal += 1) title = titled(tool.title, ` (${ordinal})`);
+    used.add(title);
+    return title === tool.title ? tool : { ...tool, title };
   });
 }
 

@@ -3,12 +3,11 @@ import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
 import { formControls, isDisabledControl, ownedControls } from "./formOwner";
 import { classifyForm } from "./scanClassify";
-import { accessibleContent, clipLabel, renderedText, text, visibleText } from "./scanText";
+import { observeTable } from "./scanTable";
+import { accessibleContent, clipLabel, collapseText, renderedText, text, visibleText } from "./scanText";
 import {
   NAVIGATION_PATTERN,
-  NEXT_PATTERN,
   PAYMENT_NAME_PATTERN,
-  PREVIOUS_PATTERN,
 } from "./scanVocabulary";
 import { deepFreeze } from "../lib/deepFreeze";
 
@@ -136,8 +135,7 @@ function labelFor(control: Element, form: Element): string | undefined {
   }
   const wrapping = control.closest("label");
   if (wrapping) return text(wrapping);
-  const aria = control.getAttribute("aria-label");
-  return aria ? aria.trim() : undefined;
+  return collapseText(control.getAttribute("aria-label") ?? "") || undefined;
 }
 
 function fieldKind(control: Element, inputType: string): FieldKind {
@@ -408,21 +406,22 @@ interface ButtonNames {
  * The label follows accessible-name order: aria-labelledby, then aria-label,
  * then content as assistive technology reads it (text with image alt in
  * place, or an input's value or alt), then title, then a generic word. The
- * risk labels are every name the button carries, including its rendered
- * text with aria-hidden spans, so an ARIA override cannot hide a finalizing
- * verb from classification.
+ * risk labels are every name the button carries, title included and its
+ * rendered text with aria-hidden spans, so an ARIA override cannot hide a
+ * finalizing verb from classification.
  */
 function buttonNames(button: Element, type: string): ButtonNames {
-  const ariaLabel = button.getAttribute("aria-label")?.trim();
-  const title = button.getAttribute("title")?.trim();
+  // Attributes are cleaned like content, so a zero-width character cannot split a verb.
+  const attribute = (name: string) => collapseText(button.getAttribute(name) ?? "") || undefined;
+  const ariaLabel = attribute("aria-label");
+  const title = attribute("title");
   const fallback = type === "button" ? "Button" : "Submit";
   const isInput = button.tagName === "INPUT";
-  const content = isInput
-    ? (type === "image" ? button.getAttribute("alt") : button.getAttribute("value"))?.trim()
-    : accessibleContent(button);
+  const content = isInput ? attribute(type === "image" ? "alt" : "value") : accessibleContent(button);
   const label = clipTo(referencedName(button) || ariaLabel || content || title || fallback, LABEL_BUDGET);
   const rendered = isInput ? "" : renderedText(button);
-  const names = [label, ariaLabel, content, rendered].filter((name): name is string => Boolean(name));
+  // The title is judged even when content wins the label, so an icon with a title-only verb is classified too.
+  const names = [label, ariaLabel, content, title, rendered].filter((name): name is string => Boolean(name));
   return { label, riskLabels: [...new Set(names.map((name) => clipTo(name, LABEL_BUDGET)))] };
 }
 
@@ -633,105 +632,6 @@ function isNavigation(button: ButtonObservation): boolean {
   return NAVIGATION_PATTERN.test(button.label.trim());
 }
 
-/** Rows and cells that belong to this table, not to a table nested inside one of its cells. */
-/** Data rows the table owns; a tfoot row is a footer (often a pager), not data. */
-function ownedRows(table: Element): Element[] {
-  return [...table.querySelectorAll("tr")].filter(
-    (row) => row.closest("table") === table && row.parentElement?.tagName !== "TFOOT",
-  );
-}
-
-function ownedCells(row: Element, selector: string): Element[] {
-  const table = row.closest("table");
-  return [...row.querySelectorAll(selector)].filter((cell) => cell.closest("table") === table);
-}
-
-/** thead cells, else the first row made only of th cells. */
-function headerCells(table: Element): string[] {
-  const fromHead = [...table.querySelectorAll("thead th")]
-    .filter((cell) => cell.closest("table") === table)
-    .map(text)
-    .filter(Boolean);
-  if (fromHead.length > 0) return fromHead;
-  const headerRow = ownedRows(table).find(
-    (row) => row.children.length > 0 && [...row.children].every((cell) => cell.tagName === "TH"),
-  );
-  return headerRow ? [...headerRow.children].map(text).filter(Boolean) : [];
-}
-
-/**
- * Pagination controls belong to the table's own neighbourhood: its container
- * when it is the only table there, otherwise the siblings between it and the
- * next table. A link counts only with rel="prev"/"next" or previous/next
- * wording; never "the first link".
- */
-function paginationScope(table: Element): Element[] {
-  const parent = table.parentElement;
-  if (!parent) return [];
-  const lone = [...parent.querySelectorAll("table")].every((other) => other === table || table.contains(other));
-  const isRoot = parent === parent.ownerDocument.body || parent === parent.ownerDocument.documentElement;
-  if (lone && !isRoot) return [parent];
-  const scope: Element[] = [];
-  // Only a lone table claims the siblings before it; between two tables a pager belongs to the one above it.
-  const holdsTable = (element: Element) => element.tagName === "TABLE" || element.querySelector("table") !== null;
-  let before = lone ? table.previousElementSibling : null;
-  while (before && !holdsTable(before)) {
-    scope.push(before);
-    before = before.previousElementSibling;
-  }
-  let after = table.nextElementSibling;
-  while (after && !holdsTable(after)) {
-    scope.push(after);
-    after = after.nextElementSibling;
-  }
-  return scope;
-}
-
-function paginationFor(table: Element): TableObservation["pagination"] {
-  const ownFooterLinks = [...table.querySelectorAll("tfoot a, tfoot button, caption a, caption button")].filter(
-    (link) => link.closest("table") === table,
-  );
-  const links = [
-    ...ownFooterLinks,
-    ...paginationScope(table).flatMap((element) => [
-      ...(element.matches("a, button") ? [element] : []),
-      ...element.querySelectorAll("a, button"),
-    ]),
-  ].filter((link) => {
-      const owner = link.closest("table");
-      if (!owner) return true;
-      const footer = link.closest("tfoot, caption");
-      if (owner === table && footer && table.contains(footer)) return true;
-      return owner !== table && !table.contains(owner);
-    });
-  const wording = (link: Element, pattern: RegExp) =>
-    pattern.test(text(link).trim()) || pattern.test((link.getAttribute("aria-label") ?? "").trim());
-  return {
-    previous: links.some((link) => link.getAttribute("rel") === "prev" || wording(link, PREVIOUS_PATTERN)),
-    next: links.some((link) => link.getAttribute("rel") === "next" || wording(link, NEXT_PATTERN)),
-  };
-}
-
-function observeTable(table: Element, document: Document): CapabilityObservation | null {
-  const headers = headerCells(table);
-  if (headers.length === 0) return null;
-  const selector = selectorFor(table, document);
-  const rowCount = ownedRows(table).filter((row) => ownedCells(row, "td").length > 0).length;
-  const { previous, next } = paginationFor(table);
-  return {
-    id: `table:${selector}`,
-    kind: "table",
-    selector,
-    heading: nearestHeading(table, document),
-    method: "get",
-    actionLabel: "Read rows",
-    riskClass: "read",
-    fields: [],
-    buttons: [],
-    table: { headers, rowCount, pagination: { previous, next } },
-  };
-}
-
 /** Selectors are unique per element, so ids collide only in pathological markup; suffix them anyway. */
 function withUniqueIds(capabilities: readonly CapabilityObservation[]): CapabilityObservation[] {
   const seen = new Map<string, number>();
@@ -758,7 +658,7 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
   const navigationButtonsSkipped = observedForms.reduce((sum, observed) => sum + observed.navigationSkipped, 0);
   const forms = observedForms.flatMap((observed) => observed.capabilities);
   const tables = [...document.querySelectorAll("table")]
-    .map((table) => observeTable(table, document))
+    .map((table) => observeTable(table, document, nearestHeading(table, document)))
     .filter((table): table is CapabilityObservation => table !== null);
   const capabilities = withUniqueIds([...forms, ...tables]);
   // Every observed control counts once, whether or not its form produced a capability.
