@@ -53,6 +53,8 @@ export interface ExcludedCapability {
   riskClass: Extract<RiskClass, "finalize" | "credential">;
   actionLabel: string;
   reason: string;
+  /** The name, option, description, or field that decided the class, clipped for display. */
+  evidence?: string;
 }
 
 export interface GenericProposal {
@@ -322,6 +324,7 @@ export async function inferGenericCapabilities(scan: GenericScanResult): Promise
         riskClass: capability.riskClass,
         actionLabel: capability.actionLabel,
         reason: capability.riskClass === "finalize" ? FINALIZE_REASON : CREDENTIAL_REASON,
+        ...(capability.riskEvidence ? { evidence: truncate(capability.riskEvidence, TITLE_BUDGET) } : {}),
       });
       continue;
     }

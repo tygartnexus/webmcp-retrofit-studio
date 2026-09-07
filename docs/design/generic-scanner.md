@@ -128,10 +128,19 @@ and the owner sees it in the excluded list. Risk
 is judged against every name a button carries, unclipped (the accessible
 name, its aria-label, its label element, its content, its title, its
 aria-describedby text, and its rendered text including aria-hidden and
-screen-reader-only spans), and against every option name and value of the
-form's selects, radios, and checkboxes, so a select used as an action menu
-with a "Delete my account" option excludes the form whole; only the
-displayed label is clipped to 120 characters, so an ARIA override cannot turn a visible
+screen-reader-only spans), and, when the button is generic ("Go", "Continue", "Submit", or the
+default), against every option name and value of the form's selects,
+radios, and checkboxes (option text, label and aria-label attributes,
+optgroup labels, and a radio's or checkbox's accessible name), so a select
+used as an action menu with a "Delete my account" option excludes the form
+whole. Under a specific button ("Send message", "Save plan") the choices are
+plain data and are not judged, and consent wording on a choice ("I confirm
+I am over 18") is a statement, not an action. A label element counts only
+when the button really is its control, and a wrapping label names the
+button by its own text, not the button's. An excluded action carries the name, option,
+description, or field that decided it, and the candidates screen shows it
+as "Matched" when it is not the label itself; only the displayed label is
+clipped to 120 characters, so an ARIA override cannot turn a visible
 "Delete account" into a write tool.
 Skipped navigation buttons are counted from the controls each form owns.
 When a search field has its own read tool, or a GET submit button already

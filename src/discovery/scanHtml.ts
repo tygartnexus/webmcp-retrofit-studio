@@ -6,6 +6,8 @@ import { classifyForm } from "./scanClassify";
 import { observeTable } from "./scanTable";
 import { accessibleContent, clipLabel, collapseText, renderedText, text, visibleText } from "./scanText";
 import {
+  CONSENT_PATTERN,
+  GENERIC_ACTION_PATTERN,
   NAVIGATION_PATTERN,
   PAYMENT_NAME_PATTERN,
 } from "./scanVocabulary";
@@ -89,6 +91,8 @@ export interface CapabilityObservation {
   rowLabel?: string;
   /** A button-level formaction that overrides the form's action. */
   action?: string;
+  /** The name or field that made this a credential or finalize action. */
+  riskEvidence?: string;
 }
 
 export interface ScanSafety {
@@ -127,15 +131,25 @@ function nearestHeading(element: Element, document: Document): string {
   return best || text(document.querySelector("title")) || "Page";
 }
 
-function labelFor(control: Element, form: Element): string | undefined {
+/** The label element for a control: one pointing at its id (the form's first), else one wrapping it. */
+function labelElementFor(control: Element, form: Element): Element | null {
   const id = control.getAttribute("id");
-  if (id) {
-    const label = form.querySelector(`label[for="${CSS.escape(id)}"]`) ?? control.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`);
-    if (label) return text(label);
-  }
-  const wrapping = control.closest("label");
-  if (wrapping) return text(wrapping);
+  const byFor = id
+    ? (form.querySelector(`label[for="${CSS.escape(id)}"]`) ?? control.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`))
+    : null;
+  return byFor ?? control.closest("label");
+}
+
+function labelFor(control: Element, form: Element): string | undefined {
+  const label = labelElementFor(control, form);
+  if (label) return text(label);
   return collapseText(control.getAttribute("aria-label") ?? "") || undefined;
+}
+
+/** A choice control's accessible name: aria-labelledby, aria-label, then its label element as assistive technology reads it. */
+function choiceName(control: Element, form: Element): string {
+  const label = labelElementFor(control, form);
+  return referencedName(control) || collapseText(control.getAttribute("aria-label") ?? "") || (label ? accessibleContent(label) : "");
 }
 
 function fieldKind(control: Element, inputType: string): FieldKind {
@@ -218,10 +232,11 @@ function observeField(control: Element, form: Element, formSelector: string, doc
     kind: fieldKind(control, inputType),
     required: control.hasAttribute("required"),
   };
-  if (excluded) return { ...field, excluded };
+  const label = labelFor(control, form);
+  // An excluded control keeps its label so the owner can see which field decided the exclusion.
+  if (excluded) return { ...field, ...(label ? { label } : {}), excluded };
   if (inputType === "radio") return observeRadio(control, field);
   if (inputType === "checkbox") return observeCheckbox(control, form, field);
-  const label = labelFor(control, form);
   const placeholder = control.getAttribute("placeholder")?.trim();
   const pattern = control.getAttribute("pattern")?.trim();
   const min = numberAttribute(control, "min");
@@ -402,12 +417,23 @@ interface ButtonNames {
   riskLabels: string[];
 }
 
-/** A button is labelable: a label element pointing at it, or wrapping it, names it before its own content. */
+/**
+ * A button is labelable: a label element pointing at it, or wrapping it, names it before its own content.
+ * Only a label whose control really is this button counts: a for= that resolves to another element with
+ * the same id, or a wrapping label whose first labelable descendant is an earlier input, labels that one.
+ */
 function nativeLabel(button: Element): string | undefined {
   const id = button.getAttribute("id");
-  const byFor = id ? button.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
-  const label = byFor ?? button.closest("label");
-  return label ? accessibleContent(label) || undefined : undefined;
+  const byFor =
+    id && button.ownerDocument.getElementById(id) === button
+      ? button.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`)
+      : null;
+  if (byFor) return accessibleContent(byFor) || undefined;
+  const wrapping = button.closest("label");
+  if (!wrapping || (wrapping as HTMLLabelElement).control !== button) return undefined;
+  // The label's own text names the button; the button's content is not part of its name.
+  const around = [...wrapping.childNodes].filter((node) => node !== button && !node.contains(button));
+  return collapseText(around.map((node) => accessibleContent(node)).join(" ")) || undefined;
 }
 
 /**
@@ -502,7 +528,7 @@ function buttonCapability(
   choices: readonly string[],
 ): CapabilityObservation {
   const effectiveMethod = button.formMethod ?? method;
-  const { kind, riskClass } = classifyForm(effectiveMethod, button.label, form, fields, [...button.riskLabels, ...choices]);
+  const { kind, riskClass, evidence } = classifyForm(effectiveMethod, button.label, form, fields, [...button.riskLabels, ...choices]);
   return {
     id: `action:${button.selector}`,
     kind,
@@ -510,6 +536,7 @@ function buttonCapability(
     heading: base.heading,
     ...(base.rowLabel ? { rowLabel: base.rowLabel } : {}),
     ...(button.formAction ? { action: button.formAction } : {}),
+    ...(evidence ? { riskEvidence: evidence } : {}),
     method: effectiveMethod,
     actionLabel: button.label,
     riskClass,
@@ -560,20 +587,31 @@ function spoken(value: string | null): string {
 /**
  * Option names and values of a form's choice controls. A select or radio group
  * used as an action menu can carry a destructive choice, so every option is
- * judged like a button name; a form with such a choice is excluded whole.
+ * judged like a button name when the button itself is generic ("Go"); a form
+ * with such a choice is excluded whole. Under a specific button ("Send
+ * message") the choices are plain data and are not judged.
  */
 function choiceNames(controls: readonly Element[], form: Element): string[] {
   return controls
     .flatMap((control) => {
       if (control.tagName === "SELECT") {
-        return [...control.querySelectorAll("option")].flatMap((option) => [accessibleContent(option), spoken(option.getAttribute("value"))]);
+        const groups = [...control.querySelectorAll("optgroup")].map((group) => group.getAttribute("label") ?? "");
+        const options = [...control.querySelectorAll("option")].flatMap((option) => [
+          option.getAttribute("label") ?? "",
+          option.getAttribute("aria-label") ?? "",
+          accessibleContent(option),
+          spoken(option.getAttribute("value")),
+        ]);
+        return [...groups, ...options];
       }
       const type = (control.getAttribute("type") ?? "").toLowerCase();
       if (control.tagName === "INPUT" && (type === "radio" || type === "checkbox")) {
-        return [labelFor(control, form) ?? "", spoken(control.getAttribute("value"))];
+        return [choiceName(control, form), spoken(control.getAttribute("value"))];
       }
       return [];
     })
+    // "I confirm I am over 18" is consent, not an action; the confirm family is not judged on a choice.
+    .map((name) => collapseText(name.replace(CONSENT_PATTERN, "")))
     .filter(Boolean);
 }
 
@@ -633,7 +671,8 @@ function observeForm(form: Element, document: Document): FormObservation {
   const controls = formControls(form, document);
   const fields = observeFields(controls, form, selector, document);
   const choices = choiceNames(controls, form);
-  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields, [...riskLabels, ...choices]);
+  const judged = (label: string) => (GENERIC_ACTION_PATTERN.test(label.trim()) ? choices : []);
+  const { kind, riskClass, evidence } = classifyForm(primaryMethod, actionLabel, form, fields, [...riskLabels, ...judged(actionLabel)]);
   // An excluded form is still listed without a submission path, so the owner sees why nothing was proposed.
   const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
   const implicit = !implicitBlocked && implicitSubmitters(controls).length === 1;
@@ -641,10 +680,12 @@ function observeForm(form: Element, document: Document): FormObservation {
   const base = { heading, rowLabel };
   const plain = buttons.filter((candidate) => candidate.type === "button");
   const buttonExtras = [
-    ...plain.filter((candidate) => !isNavigation(candidate)).map((button) => buttonCapability(button, base, "post", form, fields, choices)),
+    ...plain
+      .filter((candidate) => !isNavigation(candidate))
+      .map((button) => buttonCapability(button, base, "post", form, fields, judged(button.label))),
     ...buttons
       .filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)
-      .map((button) => buttonCapability(button, base, method, form, fields, choices)),
+      .map((button) => buttonCapability(button, base, method, form, fields, judged(button.label))),
   ];
   // A search field gets its own read tool unless a GET submit button already offers one; either way the write does not carry it.
   const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);
@@ -658,6 +699,7 @@ function observeForm(form: Element, document: Document): FormObservation {
     heading,
     ...(rowLabel ? { rowLabel } : {}),
     ...(submit?.formAction ? { action: submit.formAction } : {}),
+    ...(evidence ? { riskEvidence: evidence } : {}),
     method: primaryMethod,
     actionLabel,
     riskClass,

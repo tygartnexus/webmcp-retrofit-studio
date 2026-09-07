@@ -10,6 +10,8 @@ import {
 export interface Classification {
   kind: CapabilityKind;
   riskClass: RiskClass;
+  /** The name or field that decided a credential or finalize class, so the owner can see why. */
+  evidence?: string;
 }
 
 /**
@@ -19,6 +21,10 @@ export interface Classification {
  * "Delete account" look like a write; a name that is only a neutral word
  * ("Continue", "Next step") carries no risk signal of its own.
  */
+function fieldName(field: FieldObservation | undefined): string | undefined {
+  return field ? `${field.label ?? field.name} field` : undefined;
+}
+
 export function classifyForm(
   method: "get" | "post",
   actionLabel: string,
@@ -26,17 +32,21 @@ export function classifyForm(
   fields: readonly FieldObservation[],
   riskLabels: readonly string[] = [actionLabel],
 ): Classification {
-  const hasCredential = fields.some((field) => field.excluded === "credential");
-  const hasPayment = fields.some((field) => field.excluded === "payment-credential");
+  const credentialField = fields.find((field) => field.excluded === "credential");
+  const paymentField = fields.find((field) => field.excluded === "payment-credential");
   const roleSearch = form.getAttribute("role") === "search";
   const hasSearchInput = fields.some((field) => field.inputType === "search");
   const labels = [actionLabel, ...fields.map((field) => field.label ?? "")].join(" ");
   const neutral = NEUTRAL_ACTION_PATTERN.test(actionLabel.trim());
   const risky = riskLabels.filter((label) => !NEUTRAL_ACTION_PATTERN.test(label.trim()));
-  if (hasCredential || risky.some((label) => CREDENTIAL_ACTION_PATTERN.test(label))) {
-    return { kind: "form", riskClass: "credential" };
+  const credentialHit = risky.find((label) => CREDENTIAL_ACTION_PATTERN.test(label));
+  if (credentialField || credentialHit) {
+    return { kind: "form", riskClass: "credential", evidence: credentialHit ?? fieldName(credentialField) };
   }
-  if (hasPayment || risky.some((label) => FINALIZE_PATTERN.test(label))) return { kind: "form", riskClass: "finalize" };
+  const finalizeHit = risky.find((label) => FINALIZE_PATTERN.test(label));
+  if (paymentField || finalizeHit) {
+    return { kind: "form", riskClass: "finalize", evidence: finalizeHit ?? fieldName(paymentField) };
+  }
   const readSignal =
     neutral || roleSearch || hasSearchInput || SEARCH_PATTERN.test(labels) || READ_ACTION_PATTERN.test(actionLabel.trim());
   if (method === "get" && readSignal) return { kind: "search", riskClass: "read" };

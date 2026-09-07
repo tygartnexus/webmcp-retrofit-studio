@@ -272,3 +272,109 @@ describe("R77: an aria-describedby never names a button but is still judged", ()
     expect(safe.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go", "write"]]);
   });
 });
+
+describe("R78: consent wording on a choice is not an action", () => {
+  it("keeps a sign-up form with an age-confirmation checkbox and still excludes a destructive checkbox", async () => {
+    const signup = await scanOwner(
+      `<form method="post" action="/x"><input name="email" aria-label="Email"><label><input type="checkbox" name="confirm18" value="yes"> I confirm I am over 18</label><button>Sign up</button></form>`,
+    );
+    expect(signup.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Sign up", "write"]]);
+    const destructive = await scanOwner(
+      `<form method="post" action="/x"><input name="a" aria-label="A"><label><input type="checkbox" name="wipe" value="yes"> Delete my data</label><button>Continue</button></form>`,
+    );
+    expect(destructive.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const button = await scanOwner(post("Confirm order"));
+    expect(button.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+  });
+});
+
+describe("R79: a label names a button only when the button is its control", () => {
+  it("leaves a button alone when the wrapping label belongs to an earlier input or the id is duplicated", async () => {
+    const wrapped = await scanOwner(
+      `<form method="post" action="/x"><label>Delete account <input type="checkbox" name="chk"> <button>Save</button></label></form>`,
+    );
+    expect(wrapped.capabilities.map((c) => c.actionLabel)).toEqual(["Save"]);
+    const duplicate = await scanOwner(
+      `<label for="dup">Delete account</label><form method="post" action="/x"><input name="a" aria-label="A"><button id="dup">Save</button><button id="dup" formaction="/other">Other action</button></form>`,
+    );
+    expect(duplicate.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([
+      ["Delete account", "finalize"],
+      ["Other action", "write"],
+    ]);
+  });
+});
+
+describe("R80: an excluded action says what decided it", () => {
+  it("carries the matching option, description, or field as evidence", async () => {
+    const menu = await inferGenericCapabilities(
+      await scanOwner(
+        `<form method="post" action="/x"><input name="a" aria-label="A"><select name="op" aria-label="Action"><option value="save">Save</option><option value="delete_account">Delete my account permanently</option></select><button>Go</button></form>`,
+      ),
+    );
+    expect(menu.excluded.map((e) => [e.actionLabel, e.evidence])).toEqual([["Go", "Delete my account permanently"]]);
+    const described = await inferGenericCapabilities(
+      await scanOwner(`<span id="d">This will delete account data</span><form method="post" action="/x"><input name="a" aria-label="A"><button aria-describedby="d">Go</button></form>`),
+    );
+    expect(described.excluded[0].evidence).toBe("This will delete account data");
+    const login = await inferGenericCapabilities(
+      await scanOwner(`<form method="post" action="/login"><input name="u" aria-label="User"><input type="password" name="pw" aria-label="Password"><button>Continue</button></form>`),
+    );
+    expect(login.excluded.map((e) => [e.riskClass, e.evidence])).toEqual([["credential", "Password field"]]);
+    const plain = await inferGenericCapabilities(await scanOwner(post("Delete account")));
+    expect(plain.excluded.map((e) => e.evidence)).toEqual(["Delete account"]);
+  });
+});
+
+describe("R81: every name an option carries is judged", () => {
+  it("reads an option label attribute, an option aria-label, and an optgroup label", async () => {
+    const page = (select: string) => `<form method="post" action="/x"><input name="n" aria-label="Name">${select}<button>Go</button></form>`;
+    const attr = await scanOwner(page(`<select name="op" aria-label="Action"><option value="x" label="Delete account">Keep</option><option value="y">Archive</option></select>`));
+    expect(attr.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const aria = await scanOwner(page(`<select name="op" aria-label="Action"><option value="x" aria-label="Delete account">Keep</option><option value="y">Archive</option></select>`));
+    expect(aria.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const group = await scanOwner(page(`<select name="op" aria-label="Action"><optgroup label="Delete account"><option value="now">Now</option></optgroup><optgroup label="Keep"><option value="keep">As is</option></optgroup></select>`));
+    expect(group.capabilities.map((c) => [c.riskClass, c.riskEvidence])).toEqual([["finalize", "Delete account"]]);
+  });
+});
+
+describe("R82: a radio or checkbox is judged by its accessible name", () => {
+  it("reads aria-label, aria-labelledby, and screen-reader-only label text", async () => {
+    const page = (radio: string) => `<span id="rl">Delete account</span><form method="post" action="/x"><input name="n" aria-label="Name">${radio}<button>Go</button></form>`;
+    const aria = await scanOwner(page(`<label><input type="radio" name="r" value="x" aria-label="Delete account"> Keep</label>`));
+    expect(aria.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const referenced = await scanOwner(page(`<label><input type="radio" name="r" value="x" aria-labelledby="rl"> Keep</label>`));
+    expect(referenced.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const reader = await scanOwner(page(`<label><input type="checkbox" name="c" value="x"> Keep<span class="sr-only"> and delete account</span></label>`));
+    expect(reader.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+  });
+});
+
+describe("R83: choices are judged only under a generic button", () => {
+  it("keeps a contact form and a plan form whose buttons say what happens", async () => {
+    const contact = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option value="q">General question</option><option value="cancel">Cancel my subscription</option><option value="delete">Delete my account</option></select><button>Send message</button></form>`,
+    );
+    expect(contact.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Send message", "write"]]);
+    const plan = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="radio" name="p" value="m"> Pay monthly</label><label><input type="radio" name="p" value="y"> Pay annually</label><button>Save plan</button></form>`,
+    );
+    expect(plan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save plan", "write"]]);
+    const menu = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="op" aria-label="Action"><option value="save">Save</option><option value="delete_account">Delete my account</option></select><button>Continue</button></form>`,
+    );
+    expect(menu.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const german = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="op" aria-label="Aktion"><option value="keep">Behalten</option><option value="del">Konto löschen</option></select><button>Weiter</button></form>`,
+    );
+    expect(german.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+  });
+});
+
+describe("R84: a wrapping label names the button by its own text", () => {
+  it("leaves the button's content out of the name", async () => {
+    const scan = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><label>Draft <button>Save</button></label></form>`);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Draft", "write"]]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => t.name)).toEqual(["draft"]);
+  });
+});

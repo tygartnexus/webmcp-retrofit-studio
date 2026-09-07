@@ -76,6 +76,25 @@ export const NEUTRAL_ACTION_PATTERN = new RegExp(
 );
 
 export const FINALIZE_PATTERN = vocabulary(FINALIZE_TERMS, FINALIZE_TERMS_CJK);
+/**
+ * A button label that does not say what happens ("Go", "Continue", "Submit"), so the form's
+ * choices are what name the action. A specific label ("Send message", "Save plan") makes the
+ * choices plain data.
+ */
+const GENERIC_ACTION_TERMS = [
+  "submit", "go", "ok", "okay", "apply", "run", "execute", "proceed", "continue", "next", "done", "save", "update",
+  "send", "confirm", "choose", "select", "button",
+  "weiter", "absenden", "senden", "speichern", "bestätigen", "ausführen",
+  "envoyer", "continuer", "valider", "enregistrer", "appliquer",
+  "enviar", "continuar", "aceptar", "guardar", "aplicar",
+  "invia", "avanti", "salva", "conferma", "applica",
+  "verzenden", "doorgaan", "opslaan", "toepassen",
+  "送信", "次へ", "保存", "実行", "提交", "继续", "保存", "确定",
+];
+export const GENERIC_ACTION_PATTERN = new RegExp(`^(?:${GENERIC_ACTION_TERMS.join("|")})$`, "iu");
+
+/** Consent wording on a choice ("I confirm I am over 18") is a statement, not an action; it is not judged. */
+export const CONSENT_PATTERN = /\b(confirm\w*|bestätig\w*|confirm(?:er|ez|é|ée)|conferm\w*|bevestig\w*)\b|確認|确认/giu;
 export const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
 export const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);

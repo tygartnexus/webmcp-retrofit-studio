@@ -2205,7 +2205,21 @@ code,
   width: 100%;
   margin-top: 10px;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 10.5px;
+}
+
+/* The description column absorbs a long unbroken value; the first three keep their words whole. */
+.parameter-table th:nth-child(1) {
+  width: 26%;
+}
+
+.parameter-table th:nth-child(2) {
+  width: 16%;
+}
+
+.parameter-table th:nth-child(3) {
+  width: 14%;
 }
 
 .parameter-table th,
@@ -2248,6 +2262,13 @@ code,
 .excluded-list strong {
   margin-right: 8px;
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.excluded-evidence {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 

@@ -138,6 +138,9 @@ export function GenericCandidateScreen({ scan, proposal, approved, onApprove, on
                   <div>
                     <strong>{item.actionLabel}</strong>
                     <span className={`risk-chip risk-${item.riskClass}`}>{item.riskClass}</span>
+                    {item.evidence && item.evidence !== item.actionLabel ? (
+                      <span className="muted excluded-evidence">Matched “{item.evidence}”</span>
+                    ) : null}
                     <p>{item.reason}</p>
                   </div>
                 </li>
