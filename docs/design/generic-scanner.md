@@ -59,23 +59,33 @@ wrapping label, or aria-label), placeholder, pattern, min, max, maxlength,
 and select options. Field values are never read. Same-name radios collapse
 into one enum field; two or more same-name checkboxes collapse into one
 multi-select enum field whose value is an array of option keys, labelled by
-the fieldset legend. A lone checkbox stays boolean. Repeated names inside one
-form get numeric suffixes so schema keys stay distinct.
+the fieldset legend. A lone checkbox stays boolean; a checkbox without a value attribute has the
+option key "on", as the browser would submit. Repeated names inside one
+form get numeric suffixes so schema keys stay distinct. A control with no
+name and no id can never be a parameter, but when it is a password, hidden,
+file, or payment control it is still recorded as excluded, so it still
+counts in the envelope and still classifies its form.
 
 Tables: the header comes from `thead` cells, else the first row made only of
 `th` cells; a table with neither is not modelled. Pagination is read from
 the table's own neighbourhood (its container when it holds one table,
 otherwise the siblings up to the next table) and only from links with
-`rel="prev"`/`rel="next"` or previous/next wording; never from "the first
-link".
+`rel="prev"`/`rel="next"` or whose whole text is previous/next wording
+("Next page", "Zurück"); never from "the first link" and never from a
+"Back to dashboard" style link. A table placed directly under body only sees
+its neighbouring siblings.
 
-Buttons: `type="button"` controls whose label starts with step-navigation
-wording (next, back, previous and their translations) are skipped and
-counted in the safety envelope; other `type="button"` controls and every
-submit button beyond the first become their own capability, classified by
-their own label. A form inside a table row or a repeated container carries a
-visible row label (the first non-form cell, or the block's heading), taken
-from visible text only.
+Buttons: `type="button"` controls whose whole label is step-navigation
+wording (next, back, previous, continue, skip and their translations,
+optionally with a step or page number) are skipped and counted in the
+safety envelope; "Next of kin" is an action, "Next step" is navigation.
+Other `type="button"` controls and every submit button beyond the first
+become their own capability, classified by their own label, and a submit
+button's `formaction` and `formmethod` override the form's for that
+capability. A form inside a table row or a repeated container carries a row
+label taken from visible text only (hidden, aria-hidden, display:none, and
+script content are skipped), clipped to 60 characters: the first non-form
+cell, or the block's heading, or its first visible text.
 
 ### Classification
 
@@ -94,7 +104,9 @@ a credential or finalize form. One narrowing applies before the exclusion
 vocabulary: an ambiguous verb followed by an explicit read or neutral object
 from a fixed list ("Remove filter", "Acceder al catálogo", "Entrar em
 contato") is not an exclusion, and on a GET form it counts as a read signal.
-The verb alone ("Remove", "Acceder", "Entrar") still excludes.
+The phrase must be the whole label: the verb alone ("Remove", "Acceder",
+"Entrar") still excludes, and so does anything longer ("Remove filter and
+delete account", "Cancel search subscription").
 
 Finalize, credential, and search vocabulary covers English, German, French,
 Spanish, Italian, Portuguese, Dutch, Japanese, and Simplified Chinese action
@@ -127,7 +139,10 @@ whenever they are unique.
 
 Tool names follow the contract lint budget (30 characters, lowercase,
 underscore) and are made unique with numeric suffixes. Per-row tools fold
-the row label into name, title, and description. A label with no Latin
+the row label into name, title, and description, with descriptions clipped
+to the lint budget. Read-only names never carry write words, whatever the
+page heading said ("Orders to cancel" reads as `read_orders_to`). A search
+tool whose only label is the word "Search" is named after its heading. A label with no Latin
 letters gets a deterministic stem from a short hash of the label
 (`write_1a2b3c`, `search_…`, `read_…`); the original-script label stays in
 the title and description. Schemas set
@@ -145,7 +160,11 @@ fails, every tool from that scope is aborted.
 - Table tools read rows from the bound table with `page` and `limit`. Cells
   are clipped to a shared 200-character budget with an ellipsis, rows are
   trimmed to fit the 1.5K-character output budget, and a single wide row has
-  its cells shrunk further until it fits; `truncated` covers all three.
+  its cells shrunk further until it fits; `truncated` covers all three. A
+  table with so many columns that even eight-character cells cannot fit
+  throws "too many columns" rather than returning over-budget output.
+- Staged changes and the embed's `webmcp-retrofit:staged` event carry the
+  capability's action label, identical in studio and embed.
 - A search or write tool whose form is missing from the page throws rather
   than preparing or staging with a null action.
 - Search tools validate input, apply it to the bound controls, and return

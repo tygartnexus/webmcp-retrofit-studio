@@ -40,6 +40,8 @@ export interface FieldObservation {
   options?: readonly string[];
   /** A same-name checkbox group: the value is an array of option keys. */
   multiple?: true;
+  /** Legend of the enclosing fieldset, used to label a checkbox group. */
+  groupLabel?: string;
   excluded?: FieldExclusion;
 }
 
@@ -47,6 +49,9 @@ export interface ButtonObservation {
   label: string;
   type: string;
   selector: string;
+  /** A submit button's own target, when it overrides the form's. */
+  formAction?: string;
+  formMethod?: "get" | "post";
 }
 
 export interface TableObservation {
@@ -71,6 +76,8 @@ export interface CapabilityObservation {
   table?: TableObservation;
   /** Visible text identifying the row or repeated block this form belongs to. */
   rowLabel?: string;
+  /** A button-level formaction that overrides the form's action. */
+  action?: string;
 }
 
 export interface ScanSafety {
@@ -165,7 +172,7 @@ const NEUTRAL_OBJECTS = [
   "selection", "selección", "sélection", "selezione", "seleção", "view", "vista", "vue", "sort", "orden", "ordre",
 ];
 const NEUTRAL_ACTION_PATTERN = new RegExp(
-  `^(?:${NEUTRAL_VERBS.join("|")})\\s+(?:(?:${NEUTRAL_ARTICLES.join("|")})\\s+)?(?:${NEUTRAL_OBJECTS.join("|")})\\b`,
+  `^(?:${NEUTRAL_VERBS.join("|")})\\s+(?:(?:${NEUTRAL_ARTICLES.join("|")})\\s+)?(?:${NEUTRAL_OBJECTS.join("|")})\\s*$`,
   "iu",
 );
 
@@ -174,10 +181,24 @@ const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
 const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);
 const CREDENTIAL_ACTION_PATTERN = vocabulary(CREDENTIAL_TERMS, CREDENTIAL_TERMS_CJK);
-const PREVIOUS_PATTERN = vocabulary(PREVIOUS_TERMS, PREVIOUS_TERMS_CJK);
-const NEXT_PATTERN = vocabulary(NEXT_TERMS, NEXT_TERMS_CJK);
-/** Wizard navigation: a type="button" whose label starts with a step verb is not an action. */
-const NAVIGATION_PATTERN = vocabulary([...PREVIOUS_TERMS, ...NEXT_TERMS], [...PREVIOUS_TERMS_CJK, ...NEXT_TERMS_CJK], true);
+const STEP_WORDS = ["step", "page", "schritt", "seite", "étape", "paso", "página", "passo", "pagina", "stap"];
+const CONTINUE_TERMS = ["continue", "go back", "skip", "fortfahren", "continuer", "continuar", "prosegui", "doorgaan"];
+const CONTINUE_TERMS_CJK = ["続ける", "继续"];
+
+/** The whole label is a step word, optionally followed by a step or page word and a number. */
+function wholeLabel(latin: readonly string[], cjk: readonly string[]): RegExp {
+  const words = `(?:${[...latin, ...cjk].join("|")})`;
+  const steps = `(?:${STEP_WORDS.join("|")})`;
+  return new RegExp(`^(?:${words}(?:\\s+${steps})?|${steps})\\s*\\d*$`, "iu");
+}
+
+const PREVIOUS_PATTERN = wholeLabel(PREVIOUS_TERMS, PREVIOUS_TERMS_CJK);
+const NEXT_PATTERN = wholeLabel(NEXT_TERMS, NEXT_TERMS_CJK);
+/** Wizard navigation: a type="button" whose whole label is a step verb is not an action. */
+const NAVIGATION_PATTERN = wholeLabel(
+  [...PREVIOUS_TERMS, ...NEXT_TERMS, ...CONTINUE_TERMS],
+  [...PREVIOUS_TERMS_CJK, ...NEXT_TERMS_CJK, ...CONTINUE_TERMS_CJK],
+);
 const PAYMENT_NAME_PATTERN = /(card|cvv|cvc|expir|iban|routing|account ?number)/i;
 
 
@@ -312,11 +333,13 @@ function controlSelector(control: Element, formSelector: string, inputType: stri
 }
 
 function observeField(control: Element, form: Element, formSelector: string, document: Document): FieldObservation | null {
-  const name = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
-  if (!name) return null;
   const inputType = (control.getAttribute("type") ?? (control.tagName === "SELECT" ? "select" : "text")).toLowerCase();
   if (inputType === "submit" || inputType === "button" || inputType === "reset" || inputType === "image") return null;
-  const excluded = exclusionFor(control, inputType, name);
+  const given = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
+  const excluded = exclusionFor(control, inputType, given);
+  // A nameless control can never be a parameter, but an excluded one still counts and still classifies its form.
+  if (!given && !excluded) return null;
+  const name = given || `unnamed_${inputType}`;
   const field: FieldObservation = {
     id: `${formSelector}:field:${name}`,
     name,
@@ -376,10 +399,9 @@ function observeRadio(control: Element, field: FieldObservation): FieldObservati
 function dedupeFieldNames(fields: readonly FieldObservation[], formSelector: string): FieldObservation[] {
   const seen = new Map<string, number>();
   return fields.map((field) => {
-    const grouped = field.inputType === "radio" || field.inputType === "checkbox";
     const count = (seen.get(field.name) ?? 0) + 1;
     seen.set(field.name, count);
-    if (count === 1 || grouped) return field;
+    if (count === 1) return field;
     const name = `${field.name}_${count}`;
     return { ...field, name, id: `${formSelector}:field:${name}` };
   });
@@ -388,8 +410,10 @@ function dedupeFieldNames(fields: readonly FieldObservation[], formSelector: str
 /** A checkbox keeps its static value key so a same-name group can collapse into an enum array. */
 function observeCheckbox(control: Element, form: Element, field: FieldObservation): FieldObservation {
   const label = labelFor(control, form);
-  const value = control.getAttribute("value") ?? "";
-  return { ...field, ...(label ? { label } : {}), options: value ? [value] : [] };
+  const legend = text(control.closest("fieldset")?.querySelector("legend") ?? null);
+  // A checkbox without a value attribute submits "on", which is therefore its option key.
+  const value = control.getAttribute("value") || "on";
+  return { ...field, ...(label ? { label } : {}), ...(legend ? { groupLabel: legend } : {}), options: [value] };
 }
 
 /**
@@ -410,14 +434,17 @@ function collapseCheckboxGroups(fields: readonly FieldObservation[], formSelecto
       continue;
     }
     if ((counts.get(field.name) ?? 0) < 2) {
-      const { options: _single, ...lone } = field;
+      const { options: _single, groupLabel: _legend, ...lone } = field;
       collapsed.push(lone);
       continue;
     }
     const existing = groups.get(field.name);
     if (!existing) {
+      // The group is labelled by its legend; an individual option's label would mislead.
+      const { label: _own, groupLabel, ...rest } = field;
       const group: FieldObservation = {
-        ...field,
+        ...rest,
+        ...(groupLabel ? { label: groupLabel } : {}),
         kind: "enum",
         multiple: true,
         selector: attributeSelector(formSelector, "name", field.name),
@@ -434,12 +461,7 @@ function collapseCheckboxGroups(fields: readonly FieldObservation[], formSelecto
     groups.set(field.name, merged);
     collapsed[collapsed.indexOf(existing)] = merged;
   }
-  return collapsed.map((field) => (field.multiple ? withGroupLabel(field, fields) : field));
-}
-
-function withGroupLabel(group: FieldObservation, fields: readonly FieldObservation[]): FieldObservation {
-  const legend = fields.find((field) => field.name === group.name && field.inputType === "checkbox")?.label;
-  return group.label === undefined && legend ? { ...group, label: legend } : group;
+  return collapsed;
 }
 
 /** Same-name radios collapse into one enum field; required if any option is. */
@@ -473,11 +495,17 @@ function collapseRadioGroups(
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
-  return [...form.querySelectorAll("button, input[type=submit]")].map((button) => ({
-    label: button.tagName === "INPUT" ? (button.getAttribute("value") ?? "Submit") : text(button),
-    type: (button.getAttribute("type") ?? "submit").toLowerCase(),
-    selector: selectorFor(button, document),
-  }));
+  return [...form.querySelectorAll("button, input[type=submit]")].map((button) => {
+    const formAction = button.getAttribute("formaction")?.trim();
+    const formMethod = button.getAttribute("formmethod")?.toLowerCase();
+    return {
+      label: button.tagName === "INPUT" ? (button.getAttribute("value") ?? "Submit") : text(button),
+      type: (button.getAttribute("type") ?? "submit").toLowerCase(),
+      selector: selectorFor(button, document),
+      ...(formAction ? { formAction } : {}),
+      ...(formMethod === "get" || formMethod === "post" ? { formMethod } : {}),
+    };
+  });
 }
 
 function classifyForm(
@@ -514,10 +542,32 @@ function classifyForm(
  * first non-form cell of its table row, or the heading of a repeated sibling
  * container. Never a hidden value.
  */
+const ROW_LABEL_BUDGET = 60;
+const NON_VISIBLE_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
+
+function isHiddenElement(element: Element): boolean {
+  if (NON_VISIBLE_TAGS.has(element.tagName)) return true;
+  if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return true;
+  const style = (element.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
+  return style.includes("display:none") || style.includes("visibility:hidden");
+}
+
+/** Text a person can see: skips hidden elements and control values entirely. */
+function visibleText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+  if (node.nodeType !== Node.ELEMENT_NODE || isHiddenElement(node as Element)) return "";
+  return [...node.childNodes].map(visibleText).join("").replace(/\s+/g, " ").trim();
+}
+
+function clipLabel(value: string): string {
+  return value.length <= ROW_LABEL_BUDGET ? value : `${value.slice(0, ROW_LABEL_BUDGET - 1)}…`;
+}
+
 function rowLabelFor(form: Element): string | undefined {
   const row = form.closest("tr");
   if (row) {
-    return [...row.children].filter((cell) => !cell.contains(form)).map(text).find(Boolean);
+    const label = [...row.children].filter((cell) => !cell.contains(form)).map(visibleText).find(Boolean);
+    return label ? clipLabel(label) : undefined;
   }
   const container = form.parentElement;
   const grandparent = container?.parentElement;
@@ -527,7 +577,10 @@ function rowLabelFor(form: Element): string | undefined {
   );
   if (repeated.length < 2) return undefined;
   const heading = container.querySelector("h1, h2, h3, h4, h5, h6, legend, strong");
-  return text(heading) || undefined;
+  const fromHeading = heading ? visibleText(heading) : "";
+  if (fromHeading) return clipLabel(fromHeading);
+  const firstText = [...container.children].filter((child) => child !== form && !child.contains(form)).map(visibleText).find(Boolean);
+  return firstText ? clipLabel(firstText) : undefined;
 }
 
 function buttonCapability(
@@ -537,14 +590,16 @@ function buttonCapability(
   form: Element,
   fields: readonly FieldObservation[],
 ): CapabilityObservation {
-  const { riskClass } = classifyForm(method, button.label, form, fields);
+  const effectiveMethod = button.formMethod ?? method;
+  const { riskClass } = classifyForm(effectiveMethod, button.label, form, fields);
   return {
     id: `action:${button.selector}`,
     kind: "form",
     selector: button.selector,
     heading: base.heading,
     ...(base.rowLabel ? { rowLabel: base.rowLabel } : {}),
-    method,
+    ...(button.formAction ? { action: button.formAction } : {}),
+    method: effectiveMethod,
     actionLabel: button.label,
     riskClass,
     fields: fields.filter((field) => field.inputType !== "search"),
@@ -635,7 +690,8 @@ function paginationScope(table: Element): Element[] {
   const parent = table.parentElement;
   if (!parent) return [];
   const tables = [...parent.children].filter((child) => child.tagName === "TABLE");
-  if (tables.length <= 1) return [parent];
+  const isRoot = parent === parent.ownerDocument.body || parent === parent.ownerDocument.documentElement;
+  if (tables.length <= 1 && !isRoot) return [parent];
   const scope: Element[] = [];
   let sibling = table.nextElementSibling;
   while (sibling && sibling.tagName !== "TABLE") {
@@ -650,10 +706,11 @@ function paginationFor(table: Element): TableObservation["pagination"] {
     ...(element.matches("a, button") ? [element] : []),
     ...element.querySelectorAll("a, button"),
   ]);
-  const wording = (link: Element) => `${text(link)} ${link.getAttribute("aria-label") ?? ""}`.trim();
+  const wording = (link: Element, pattern: RegExp) =>
+    pattern.test(text(link).trim()) || pattern.test((link.getAttribute("aria-label") ?? "").trim());
   return {
-    previous: links.some((link) => link.getAttribute("rel") === "prev" || PREVIOUS_PATTERN.test(wording(link))),
-    next: links.some((link) => link.getAttribute("rel") === "next" || NEXT_PATTERN.test(wording(link))),
+    previous: links.some((link) => link.getAttribute("rel") === "prev" || wording(link, PREVIOUS_PATTERN)),
+    next: links.some((link) => link.getAttribute("rel") === "next" || wording(link, NEXT_PATTERN)),
   };
 }
 
@@ -698,10 +755,8 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
 
   const document = new DOMParser().parseFromString(html, "text/html");
   const scriptsIgnored = document.querySelectorAll("script").length;
-  const navigationButtonsSkipped = [...document.querySelectorAll("form button, form input[type=submit]")].filter(
-    (button) =>
-      (button.getAttribute("type") ?? "submit").toLowerCase() === "button" &&
-      NAVIGATION_PATTERN.test(text(button).trim()),
+  const navigationButtonsSkipped = [...document.querySelectorAll("form button")].filter(
+    (button) => (button.getAttribute("type") ?? "submit").toLowerCase() === "button" && NAVIGATION_PATTERN.test(text(button).trim()),
   ).length;
   const forms = [...document.querySelectorAll("form")].flatMap((form) => observeForm(form, document));
   const tables = [...document.querySelectorAll("table")]

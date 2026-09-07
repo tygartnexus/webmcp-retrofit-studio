@@ -28,7 +28,12 @@ function parameterRows(tool: ProposedTool): readonly ParameterRow[] {
   const required = new Set(tool.inputSchema.required ?? []);
   return Object.entries(tool.inputSchema.properties).map(([name, schema]) => ({
     name,
-    type: schema.enum ? `enum (${schema.enum.length} values)` : schema.type,
+    type:
+      schema.type === "array"
+        ? `array (${schema.items?.enum.length ?? 0} options)`
+        : schema.enum
+          ? `enum (${schema.enum.length} values)`
+          : schema.type,
     required: required.has(name),
     description: schema.description,
   }));

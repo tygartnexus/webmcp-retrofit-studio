@@ -1,3 +1,4 @@
+import { WRITE_NAME_WORDS } from "../validation/lintToolContracts";
 import { canonicalJson, sha256Hex } from "./scanOwnedFixture";
 import type {
   CapabilityObservation,
@@ -70,6 +71,9 @@ const SUFFIX_HEADROOM = 4;
 const MAX_NAME_SUFFIX = 999;
 const DESCRIPTION_BUDGET = 150;
 const LEADING_VERBS = /^(search|find|filter|browse|look ?up|read|view|show|list)\s+/i;
+/** A label that is nothing but a search verb names no object. */
+const BARE_SEARCH_VERB = /^(search|find|filter|browse|look ?up|go|suchen|rechercher|buscar|cerca|pesquisar|zoeken|検索|搜索)$/i;
+const DESCRIPTION_MAX = 500;
 const FINALIZE_REASON =
   "Finalizing actions stay on the visible interface behind the human presence ceremony; no tool can perform them.";
 const CREDENTIAL_REASON = "Credential entry never becomes a tool; the person signs in on the visible interface.";
@@ -93,9 +97,14 @@ function shortHash(input: string): string {
   return hash.toString(16).padStart(8, "0").slice(0, 6);
 }
 
+/** Read-only names must not carry write words, whatever the page heading said. */
+function readSafe(slug: string): string {
+  return slug.split("_").filter((word) => word && !WRITE_NAME_WORDS.includes(word)).join("_");
+}
+
 /** A name stem from a label: its slug, or a hashed stem when the label has no Latin letters. */
-function stemFor(prefix: string, label: string, fallbackPrefix: string): string {
-  const slug = slugify(label);
+function stemFor(prefix: string, label: string, fallbackPrefix: string, readOnly = false): string {
+  const slug = readOnly ? readSafe(slugify(label)) : slugify(label);
   return slug ? `${prefix}${slug}` : `${fallbackPrefix}${shortHash(label)}`;
 }
 
@@ -136,8 +145,11 @@ function truncate(value: string, budget: number): string {
 
 function objectNoun(capability: CapabilityObservation): string {
   const searchField = capability.fields.find((field) => field.inputType === "search" || /search/i.test(field.label ?? ""));
-  const source = searchField?.label ?? capability.heading;
-  return source.replace(LEADING_VERBS, "").trim() || "items";
+  for (const source of [searchField?.label, capability.heading]) {
+    const noun = (source ?? "").replace(LEADING_VERBS, "").trim();
+    if (noun && !BARE_SEARCH_VERB.test(noun)) return noun;
+  }
+  return "items";
 }
 
 /** HTML matches a pattern attribute against the whole value; the schema says so explicitly. */
@@ -208,7 +220,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   if (capability.kind === "table" && capability.table) {
     const noun = capability.heading;
     return {
-      name: uniqueName(stemFor("read_", noun, "read_"), taken),
+      name: uniqueName(stemFor("read_", noun, "read_", true), taken),
       title: `Read ${noun}`,
       description: `Read rows from the ${noun} table with paging. This tool does not modify state.`,
       inputSchema: tableSchema(),
@@ -222,7 +234,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   if (capability.kind === "search") {
     const noun = objectNoun(capability);
     return {
-      name: uniqueName(stemFor("search_", noun, "search_"), taken),
+      name: uniqueName(stemFor("search_", noun, "search_", true), taken),
       title: `Search ${noun}`,
       description: `Search ${noun} using the ${capability.heading} form. This tool does not modify state.`,
       inputSchema: schemaFromFields(capability.fields),
@@ -237,9 +249,12 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   return {
     name: uniqueName(stemFor("", row ? `${action} ${row}` : action, "write_"), taken),
     title: row ? `${action}: ${row}` : action,
-    description: row
-      ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`
-      : `Submit the "${action}" form on ${capability.heading}. This changes state and is staged for human review before anything final.`,
+    description: truncate(
+      row
+        ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`
+        : `Submit the "${action}" form on ${capability.heading}. This changes state and is staged for human review before anything final.`,
+      DESCRIPTION_MAX,
+    ),
     inputSchema: schemaFromFields(capability.fields),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     riskClass: "write",

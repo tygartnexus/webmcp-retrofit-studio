@@ -49,8 +49,12 @@ const NAME_BUDGET = 30;
 const DESCRIPTION_MIN = 10;
 const DESCRIPTION_BUDGET = 500;
 const PARAMETER_DESCRIPTION_BUDGET = 150;
-const WRITE_NAME_PATTERN =
-  /(^|_)(create|update|delete|remove|submit|send|post|book|register|finalize|confirm|pay|purchase|cancel)(_|$)/i;
+/** Name words that read as writes; read-only tools must not carry them. */
+export const WRITE_NAME_WORDS = Object.freeze([
+  "create", "update", "delete", "remove", "submit", "send", "post", "book", "register", "finalize", "confirm", "pay",
+  "purchase", "cancel",
+]);
+const WRITE_NAME_PATTERN = new RegExp(`(^|_)(${WRITE_NAME_WORDS.join("|")})(_|$)`, "i");
 
 export const CONTRACT_LINT_RULES: readonly ContractLintRule[] = Object.freeze([
   Object.freeze({

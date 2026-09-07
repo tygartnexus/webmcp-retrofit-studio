@@ -134,12 +134,12 @@ function applyValues(host: Document, capability: CapabilityObservation, values: 
   return values;
 }
 
-/** The form a capability acts on. Throws rather than staging against nothing. */
-function formFor(host: Document, capability: CapabilityObservation, toolName: string): Element {
+/** The form a capability acts on and the target it would post to. Throws rather than staging against nothing. */
+function targetFor(host: Document, capability: CapabilityObservation, toolName: string): { form: Element; action: string | null } {
   const anchor = host.querySelector(capability.selector);
   const form = anchor?.closest("form") ?? anchor;
   if (!form) throw new Error(`The form for "${toolName}" is missing from the page`);
-  return form;
+  return { form, action: capability.action ?? form.getAttribute("action") };
 }
 
 function readTable(host: Document, capability: CapabilityObservation, page: number, limit: number): TableReadOutput {
@@ -172,6 +172,9 @@ function readTable(host: Document, capability: CapabilityObservation, page: numb
     cellBudget = Math.max(MIN_CELL_BUDGET_CHARS, Math.floor(cellBudget / 2));
     rows = clipRows().slice(0, rows.length);
     truncated = true;
+  }
+  if (JSON.stringify(output()).length > OUTPUT_BUDGET_CHARS) {
+    throw new Error("The table has too many columns to fit the output budget");
   }
   return output();
 }
@@ -213,7 +216,7 @@ function searchTool(binding: Binding, host: Document): WebMCP.ModelContextTool {
       const signal = signalFrom(options);
       assertExecutionActive(signal);
       const values = validateToolInput(binding.tool.inputSchema, input);
-      const form = formFor(host, binding.capability, binding.tool.name);
+      const target = targetFor(host, binding.capability, binding.tool.name);
       const applied = applyValues(host, binding.capability, values);
       const query = new URLSearchParams(
         Object.entries(applied).flatMap(([key, value]) => {
@@ -225,7 +228,7 @@ function searchTool(binding: Binding, host: Document): WebMCP.ModelContextTool {
       return {
         status: "query_prepared",
         performed: false,
-        request: { method: "GET", action: form.getAttribute("action"), query },
+        request: { method: "GET", action: target.action, query },
         applied,
       };
     },
@@ -240,7 +243,7 @@ function writeTool(binding: Binding, options: GenericRuntimeOptions): WebMCP.Mod
       const signal = signalFrom(executeOptions);
       assertExecutionActive(signal);
       const values = validateToolInput(binding.tool.inputSchema, input);
-      const form = formFor(host, binding.capability, binding.tool.name);
+      const target = targetFor(host, binding.capability, binding.tool.name);
       const applied = applyValues(host, binding.capability, values);
       const change: StagedChange = Object.freeze({
         id: nextId(),
@@ -249,7 +252,7 @@ function writeTool(binding: Binding, options: GenericRuntimeOptions): WebMCP.Mod
         actionLabel: binding.capability.actionLabel,
         heading: binding.capability.heading,
         method: binding.capability.method,
-        action: form.getAttribute("action"),
+        action: target.action,
         fields: applied,
         stagedAt: now(),
       });

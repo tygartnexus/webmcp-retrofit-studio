@@ -3,6 +3,7 @@ import { buildGenericExportBundle } from "../src/export/buildGenericExportBundle
 import { scanHtml, type CapabilityObservation } from "../src/discovery/scanHtml";
 import { createOwnerSnapshot } from "../src/fixtures/ownerSnapshot";
 import { createGenericToolDefinitions } from "../src/runtime/genericRuntime";
+import { sampleToolInput } from "../src/runtime/sampleInput";
 import { runGenericChecks } from "../src/validation/runGenericChecks";
 
 /**
@@ -304,7 +305,7 @@ describe("B5: pagination scoped to the table's neighbourhood", () => {
 
     expect(flags["#a"]).toEqual({ previous: false, next: true });
     expect(flags["#b"]).toEqual({ previous: true, next: false });
-    expect(flags["#c"]).toEqual({ previous: true, next: false });
+    expect(flags["#c"]).toEqual({ previous: false, next: false });
   });
 
   it("does not let one table's controls leak onto a sibling table", async () => {
@@ -342,7 +343,7 @@ describe("G2: same-name checkbox groups", () => {
     const proposal = await inferGenericCapabilities(scan);
     expect(proposal.tools[0].inputSchema.properties.interests).toEqual({
       type: "array",
-      description: expect.any(String),
+      description: "Interests",
       items: { type: "string", enum: ["tools", "parts", "safety"] },
       uniqueItems: true,
     });
@@ -508,5 +509,230 @@ describe("N10: ambiguous verbs with a neutral object are not exclusions", () => 
   ] as const)("%s form labelled %s is %s/%s", async (method, label, kind, riskClass) => {
     const scan = await scanOwner(form(method, label));
     expect(scan.capabilities[0]).toMatchObject({ kind, riskClass });
+  });
+});
+
+describe("R1: a neutral phrase must be the whole label", () => {
+  it.each([
+    ["post", "Remove filter and delete account", "finalize"],
+    ["post", "Cancel search subscription", "finalize"],
+    ["post", "Acceder al catálogo y eliminar cuenta", "credential"],
+    ["get", "Remove filter", "read"],
+    ["get", "Clear the selection", "read"],
+  ] as const)("%s form labelled %s is %s", async (method, label, riskClass) => {
+    const scan = await scanOwner(
+      `<form method="${method}" action="/x"><label for="f">Field</label><input id="f" name="f"><button>${label}</button></form>`,
+    );
+    expect(scan.capabilities[0].riskClass).toBe(riskClass);
+  });
+});
+
+describe("R2: navigation words must be the whole button label", () => {
+  it("keeps 'Next of kin' and 'Back office report' as actions and skips 'Continue' and 'Go back'", async () => {
+    const html = `<title>Nav</title><form id="w" method="post" action="/w"><input name="a" aria-label="A">
+<button type="button">Next of kin</button><button type="button">Back office report</button>
+<button type="button">Continue</button><button type="button">Go back</button><button type="button">Next step</button><button type="button">Page 2</button>
+<button type="submit">Save</button></form>`;
+    const scan = await scanOwner(html);
+
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Save", "Next of kin", "Back office report"]);
+    expect(scan.safety.navigationButtonsSkipped).toBe(4);
+  });
+});
+
+describe("R3: a submit button's formaction wins over the form action", () => {
+  it("stages each submit to its own target in the studio runtime and the embed", async () => {
+    const html = `<title>Orders</title><form id="o" method="post" action="/orders/save"><label for="n">Note</label><input id="n" name="note">
+<button type="submit">Save draft</button><button type="submit" formaction="/orders/archive">Archive</button></form>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const staged: { toolName: string; action: string | null }[] = [];
+    const tools = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined, onStaged: (c) => staged.push(c) });
+    for (const tool of tools) tool.execute({ note: "x" }, { signal: new AbortController().signal });
+
+    expect(staged.map((c) => [c.toolName, c.action])).toEqual([
+      ["save_draft", "/orders/save"],
+      ["archive", "/orders/archive"],
+    ]);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    const embed = bundle.files.find((file) => file.path === "webmcp-retrofit.generated.js")!.content;
+    const registered = new Map<string, WebMCP.ModelContextTool>();
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: { registerTool: (tool: WebMCP.ModelContextTool) => registered.set(tool.name, tool) },
+    });
+    const events: { toolName: string; action: string | null; actionLabel: string }[] = [];
+    const onStaged = (event: Event) => events.push((event as CustomEvent).detail);
+    window.addEventListener("webmcp-retrofit:staged", onStaged);
+    try {
+      document.body.innerHTML = new DOMParser().parseFromString(html, "text/html").body.innerHTML;
+      new Function(embed)();
+      registered.get("archive")!.execute({ note: "x" }, { signal: new AbortController().signal });
+      expect(events).toEqual([expect.objectContaining({ toolName: "archive", action: "/orders/archive", actionLabel: "Archive" })]);
+    } finally {
+      window.removeEventListener("webmcp-retrofit:staged", onStaged);
+      Reflect.deleteProperty(document, "modelContext");
+    }
+  });
+});
+
+describe("R4: checkbox groups are labelled by the fieldset legend", () => {
+  it("describes the group as the legend, not the first option", async () => {
+    const html = `<title>Prefs</title><form id="p" method="post" action="/p"><fieldset><legend>Interests</legend>
+<label><input type="checkbox" name="interests" value="tools"> Tools</label><label><input type="checkbox" name="interests" value="parts"> Parts</label></fieldset>
+<label><input type="checkbox" name="rush"> Rush delivery</label><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools[0].inputSchema.properties.interests.description).toBe("Interests");
+    expect(proposal.tools[0].inputSchema.properties.rush.description).toBe("Rush delivery");
+  });
+
+  it("models a value-less checkbox in a group as 'on'", async () => {
+    const html = `<form id="g" method="post"><label><input type="checkbox" name="i" value="a"> A</label><label><input type="checkbox" name="i"> B</label><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields[0].options).toEqual(["a", "on"]);
+  });
+});
+
+describe("R5: nameless excluded controls still classify and count", () => {
+  it("treats a nameless password as a credential and counts nameless hidden and file inputs", async () => {
+    const html = `<title>Nameless</title>
+<form id="login" method="post" action="/session"><input name="user" aria-label="User"><input type="password" class="pw"><button>Continue</button></form>
+<form id="up" method="post" action="/up"><input type="hidden" value="tok"><input type="file"><input name="title" aria-label="Title"><button>Upload</button></form>`;
+    const scan = await scanOwner(html);
+    const [login, upload] = scan.capabilities;
+
+    expect(login.riskClass).toBe("credential");
+    expect(scan.safety.credentialFieldsExcluded).toBe(1);
+    expect(scan.safety.hiddenFieldsExcluded).toBe(1);
+    expect(scan.safety.fileFieldsExcluded).toBe(1);
+    expect(JSON.stringify(scan)).not.toContain("tok");
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => t.name)).toEqual(["upload"]);
+    expect(Object.keys(proposal.tools[0].inputSchema.properties)).toEqual(["title"]);
+    expect(upload.fields.filter((f) => f.excluded).map((f) => f.name)).toEqual(["unnamed_hidden", "unnamed_file"]);
+  });
+});
+
+describe("R6: row labels use visible text only and are budgeted", () => {
+  it("ignores hidden spans and inline display:none, and truncates long labels", async () => {
+    const long = "L".repeat(400);
+    const html = `<title>Rows</title><table id="t"><thead><tr><th>Name</th><th></th></tr></thead><tbody>
+<tr><td><span hidden>ref-991-secret</span><span style="display:none">also-secret</span>Alice</td><td><form method="post" action="/e/1"><input name="role" aria-label="Role"><button>Edit</button></form></td></tr>
+<tr><td>${long}</td><td><form method="post" action="/e/2"><input name="role" aria-label="Role"><button>Edit</button></form></td></tr>
+</tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const [first, second] = scan.capabilities.filter((c) => c.kind === "form");
+
+    expect(first.rowLabel).toBe("Alice");
+    expect(second.rowLabel!.length).toBeLessThanOrEqual(60);
+    const proposal = await inferGenericCapabilities(scan);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    for (const file of bundle.files) {
+      expect(file.content).not.toContain("ref-991-secret");
+      expect(file.content).not.toContain("also-secret");
+    }
+  });
+
+  it("falls back to the first visible text of a repeated block without a heading", async () => {
+    const html = `<ul><li><p>Widget A</p><form method="post" action="/a"><input name="q" aria-label="Q"><button>Update</button></form></li><li><p>Widget B</p><form method="post" action="/b"><input name="q" aria-label="Q"><button>Update</button></form></li></ul>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.rowLabel)).toEqual(["Widget A", "Widget B"]);
+  });
+});
+
+describe("R7: read tools never carry write verbs in their names", () => {
+  it("strips finalize wording from a heading-derived name and exports", async () => {
+    const html = `<title>Filters</title><h2>Remove filters</h2><form method="get" action="/list"><label for="q">Term</label><input id="q" name="q"><button>Remove filter</button></form>
+<h2>Orders to cancel</h2><table id="oc"><thead><tr><th>Id</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+
+    expect(proposal.tools.map((t) => t.name)).toEqual(["search_filters", "read_orders_to"]);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    await expect(buildGenericExportBundle({ snapshot, scan, proposal, validation })).resolves.toBeTruthy();
+  });
+
+  it("names a search tool after its heading when the label is just 'Search'", async () => {
+    const html = `<h1>Blog</h1><form method="get" action="/s"><label>Search <input name="q" type="search"></label><button>Go</button></form>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(html));
+    expect(proposal.tools[0].name).toBe("search_blog");
+  });
+});
+
+describe("R8: pagination links must be nav wording alone", () => {
+  it("ignores 'Back to dashboard' but accepts 'Next page' and rel links", async () => {
+    const html = `<main><a href="/dashboard">Back to dashboard</a><table id="t"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table><nav><a href="?p=2">Next page</a></nav></main>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].table?.pagination).toEqual({ previous: false, next: true });
+  });
+});
+
+describe("R9: checks exercise optional checkbox groups and very wide tables fail with a clear reason", () => {
+  it("includes an optional array property in the sample input", async () => {
+    const html = `<form id="p" method="post"><fieldset><legend>Days</legend><label><input type="checkbox" name="d" value="mon"> Mon</label><label><input type="checkbox" name="d" value="tue"> Tue</label></fieldset><button>Save</button></form>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(html));
+    expect(sampleToolInput(proposal.tools[0].inputSchema)).toEqual({ d: ["mon"] });
+  });
+
+  it("reports a table with too many columns instead of returning over-budget output", async () => {
+    const cells = Array.from({ length: 400 }, (_, i) => `<td>c${i}</td>`).join("");
+    const html = `<h2>Huge</h2><table id="h"><thead><tr>${"<th>H</th>".repeat(400)}</tr></thead><tbody><tr>${cells}</tr></tbody></table>`;
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    const [read] = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined });
+    expect(() => read.execute({}, { signal: new AbortController().signal })).toThrow(/too many columns/);
+  });
+});
+
+describe("R10: same-name fields of different types do not share a schema key", () => {
+  it("suffixes a text input that collides with a lone checkbox", async () => {
+    const html = `<form id="m" method="post"><label><input type="checkbox" name="flag"> Flag</label><label for="t">Text</label><input id="t" name="flag"><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields.map((f) => [f.name, f.inputType])).toEqual([
+      ["flag", "checkbox"],
+      ["flag_2", "text"],
+    ]);
+  });
+});
+
+describe("R11: studio and embed agree on the staged action label for per-row tools", () => {
+  it("both report the capability's action label, not the tool title", async () => {
+    const html = `<title>Rows</title><table id="t"><thead><tr><th>Name</th><th></th></tr></thead><tbody><tr><td>Alice</td><td><form method="post" action="/e/1"><input name="role" aria-label="Role"><button>Edit</button></form></td></tr></tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    const embed = bundle.files.find((file) => file.path === "webmcp-retrofit.generated.js")!.content;
+    const edit = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined }).find(
+      (tool) => tool.name === "edit_alice",
+    )!;
+    const studio = edit.execute({ role: "x" }, { signal: new AbortController().signal }) as { staged: { actionLabel: string } };
+
+    const registered = new Map<string, WebMCP.ModelContextTool>();
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: { registerTool: (tool: WebMCP.ModelContextTool) => registered.set(tool.name, tool) },
+    });
+    try {
+      document.body.innerHTML = new DOMParser().parseFromString(html, "text/html").body.innerHTML;
+      new Function(embed)();
+      const shipped = registered.get("edit_alice")!.execute({ role: "x" }, { signal: new AbortController().signal }) as {
+        staged: { actionLabel: string };
+      };
+      expect(shipped.staged.actionLabel).toBe(studio.staged.actionLabel);
+      expect(studio.staged.actionLabel).toBe("Edit");
+    } finally {
+      Reflect.deleteProperty(document, "modelContext");
+    }
   });
 });

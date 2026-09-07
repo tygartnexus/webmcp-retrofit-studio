@@ -51,6 +51,8 @@ export function sampleValue(schema: PropertySchema): ToolInputValue {
 }
 
 export function sampleToolInput(schema: ProposedToolSchema): Record<string, ToolInputValue> {
-  const required = schema.required ?? [];
-  return Object.fromEntries(required.map((key) => [key, sampleValue(schema.properties[key])]));
+  const required = new Set(schema.required ?? []);
+  // Optional multi-select groups are included so the array runtime path is exercised by the checks.
+  const keys = Object.keys(schema.properties).filter((key) => required.has(key) || schema.properties[key].type === "array");
+  return Object.fromEntries(keys.map((key) => [key, sampleValue(schema.properties[key])]));
 }

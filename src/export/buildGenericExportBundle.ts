@@ -28,6 +28,9 @@ export interface GenericToolBinding {
   riskClass: ProposedTool["riskClass"];
   selector: string;
   method: "get" | "post";
+  actionLabel: string;
+  /** A button-level formaction that overrides the form's action. */
+  action?: string;
   fields: readonly { name: string; selector: string; inputType: string; multiple?: true }[];
   outputColumns?: readonly string[];
 }
@@ -106,6 +109,8 @@ function bindingFor(tool: ProposedTool, scan: GenericScanResult): GenericToolBin
     riskClass: tool.riskClass,
     selector: capability.selector,
     method: capability.method,
+    actionLabel: capability.actionLabel,
+    ...(capability.action ? { action: capability.action } : {}),
     fields: capability.fields
       .filter((field) => !field.excluded)
       .map((field) => ({
@@ -257,6 +262,7 @@ const EMBED_RUNTIME = String.raw`
       slice = clipRows().slice(0, slice.length);
       truncated = true;
     }
+    if (JSON.stringify(build()).length > OUTPUT_BUDGET) throw new Error("The table has too many columns to fit the output budget");
     return build();
   }
   function execute(tool, input, options) {
@@ -269,7 +275,7 @@ const EMBED_RUNTIME = String.raw`
     var form = anchor && (anchor.closest("form") || anchor);
     if (!form) throw new Error("The form for \"" + tool.name + "\" is missing from the page");
     var applied = apply(binding, values);
-    var action = form.getAttribute("action");
+    var action = binding.action || form.getAttribute("action");
     if (signal && signal.aborted) throw abortError();
     if (binding.kind === "search") {
       var params = new URLSearchParams();
@@ -281,9 +287,9 @@ const EMBED_RUNTIME = String.raw`
       return { status: "query_prepared", performed: false, request: { method: "GET", action: action, query: params.toString() }, applied: applied };
     }
     var id = "staged-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
-    var change = { id: id, toolName: tool.name, actionLabel: tool.title, method: binding.method, action: action, fields: applied, stagedAt: new Date().toISOString() };
+    var change = { id: id, toolName: tool.name, actionLabel: binding.actionLabel, method: binding.method, action: action, fields: applied, stagedAt: new Date().toISOString() };
     window.dispatchEvent(new CustomEvent("webmcp-retrofit:staged", { detail: change }));
-    return { status: "draft_staged", requiresHumanConfirmation: true, humanConfirmation: { surface: "visible-interface", method: "webauthn-user-presence", toolAvailable: false }, staged: { id: id, actionLabel: tool.title, fields: applied } };
+    return { status: "draft_staged", requiresHumanConfirmation: true, humanConfirmation: { surface: "visible-interface", method: "webauthn-user-presence", toolAvailable: false }, staged: { id: id, actionLabel: binding.actionLabel, fields: applied } };
   }
   var context = document.modelContext;
   if (!context || typeof context.registerTool !== "function") return { registered: [], supported: false };
