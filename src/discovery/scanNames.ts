@@ -1,5 +1,5 @@
-import { accessibleContent, collapseText, renderedText, text } from "./scanText";
-import { CONSENT_PATTERN } from "./scanVocabulary";
+import { accessibleContent, collapseText, renderedText, text, visibleText } from "./scanText";
+import { CONSENT_STATEMENT_PATTERN } from "./scanVocabulary";
 
 /**
  * Names for controls: field labels, button names in accessible-name order,
@@ -94,12 +94,14 @@ export function buttonNames(button: Element, type: string): ButtonNames {
   const native = nativeLabel(button);
   const label = clipTo(referenced || ariaLabel || native || content || title || fallback, LABEL_BUDGET);
   const rendered = isInput ? "" : renderedText(button);
+  // What a sighted person reads is a name too: "Save" beside a screen-reader-only "profile" is still generic.
+  const sighted = isInput ? "" : visibleText(button);
   // Every name is judged unclipped, the aria-labelledby text, the label element, and the title included: a verb
   // past the label budget still counts, and an icon with a title-only verb is classified too. Only the displayed
   // label is clipped.
   // A description never names the button, but a destructive verb hidden in one is still judged.
   const described = referencedName(button, "aria-describedby");
-  const names = [label, referenced, ariaLabel, native, content, title, rendered, described].filter(
+  const names = [label, referenced, ariaLabel, native, content, title, rendered, sighted, described].filter(
     (name): name is string => Boolean(name),
   );
   return { label, riskLabels: [...new Set(names)] };
@@ -117,26 +119,41 @@ function spoken(value: string | null): string {
  * with such a choice is excluded whole. Under a specific button ("Send
  * message") the choices are plain data and are not judged.
  */
+export interface ChoiceOption {
+  /** The option key as it would be submitted; the value attribute, or "on" for a bare checkbox. */
+  value: string;
+  /** Every name the option carries, consent wording removed. */
+  names: readonly string[];
+}
+
+/** "I confirm I am over 18" is consent, not an action; a first-person statement is not judged on a choice. */
+function judgedNames(names: readonly string[]): string[] {
+  return names.map(collapseText).filter((name) => name && !CONSENT_STATEMENT_PATTERN.test(name));
+}
+
+/** The options of one choice control (a select, radio, or checkbox), each with every name it carries. */
+export function choiceOptions(control: Element, form: Element): ChoiceOption[] {
+  if (control.tagName === "SELECT") {
+    return [...control.querySelectorAll("option")].map((option) => ({
+      value: option.getAttribute("value") ?? "",
+      names: judgedNames([
+        option.getAttribute("label") ?? "",
+        option.getAttribute("aria-label") ?? "",
+        accessibleContent(option),
+        spoken(option.getAttribute("value")),
+        option.closest("optgroup")?.getAttribute("label") ?? "",
+      ]),
+    }));
+  }
+  const type = (control.getAttribute("type") ?? "").toLowerCase();
+  if (control.tagName === "INPUT" && (type === "radio" || type === "checkbox")) {
+    const value = control.getAttribute("value") ?? (type === "checkbox" ? "on" : "");
+    return [{ value, names: judgedNames([choiceName(control, form), spoken(value)]) }];
+  }
+  return [];
+}
+
+/** Every option name of a form's choice controls, for judging the form whole when a choice is its action. */
 export function choiceNames(controls: readonly Element[], form: Element): string[] {
-  return controls
-    .flatMap((control) => {
-      if (control.tagName === "SELECT") {
-        const groups = [...control.querySelectorAll("optgroup")].map((group) => group.getAttribute("label") ?? "");
-        const options = [...control.querySelectorAll("option")].flatMap((option) => [
-          option.getAttribute("label") ?? "",
-          option.getAttribute("aria-label") ?? "",
-          accessibleContent(option),
-          spoken(option.getAttribute("value")),
-        ]);
-        return [...groups, ...options];
-      }
-      const type = (control.getAttribute("type") ?? "").toLowerCase();
-      if (control.tagName === "INPUT" && (type === "radio" || type === "checkbox")) {
-        return [choiceName(control, form), spoken(control.getAttribute("value"))];
-      }
-      return [];
-    })
-    // "I confirm I am over 18" is consent, not an action; the confirm family is not judged on a choice.
-    .map((name) => collapseText(name.replace(CONSENT_PATTERN, "")))
-    .filter(Boolean);
+  return controls.flatMap((control) => choiceOptions(control, form).flatMap((option) => option.names));
 }

@@ -2,8 +2,8 @@ import type { HtmlSnapshot } from "../fixtures/genericFixtures";
 import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
 import { formControls, isDisabledControl, ownedControls } from "./formOwner";
-import { classifyForm } from "./scanClassify";
-import { buttonNames, choiceNames, clipTo, LABEL_BUDGET, labelFor } from "./scanNames";
+import { classifyForm, destructiveName } from "./scanClassify";
+import { buttonNames, choiceNames, choiceOptions, clipTo, LABEL_BUDGET, labelFor } from "./scanNames";
 import { observeTable } from "./scanTable";
 import { clipLabel, text, visibleText } from "./scanText";
 import {
@@ -50,6 +50,8 @@ export interface FieldObservation {
   max?: number;
   maxLength?: number;
   options?: readonly string[];
+  /** Option names withheld from the parameter because they finalize or need credentials; a person can still pick them on the page. */
+  withheld?: readonly string[];
   /** A same-name checkbox group: the value is an array of option keys. */
   multiple?: true;
   /** Legend of the enclosing fieldset, used to label a checkbox group. */
@@ -528,15 +530,66 @@ function primaryAction(form: Element, buttons: readonly ButtonObservation[], doc
 
 const CHOICE_TYPES = new Set(["select", "radio", "checkbox"]);
 
+interface WithheldChoices {
+  fields: FieldObservation[];
+  /** The option that makes a select or radio group an action menu: every option of it is destructive. */
+  menu?: string;
+}
+
+/** Destructive option keys and names per control name, so a parameter can leave them out. */
+function destructiveChoices(controls: readonly Element[], form: Element): Map<string, { values: string[]; names: string[] }> {
+  const found = new Map<string, { values: string[]; names: string[] }>();
+  for (const control of controls) {
+    const name = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
+    for (const option of choiceOptions(control, form)) {
+      const hit = destructiveName(option.names);
+      if (!hit) continue;
+      const entry = found.get(name) ?? { values: [], names: [] };
+      found.set(name, { values: [...entry.values, option.value], names: [...entry.names, hit] });
+    }
+  }
+  return found;
+}
+
+/**
+ * A destructive option under a specific button is not the form's action, but an agent must never be
+ * able to pick it: the option is withheld from the parameter and named in the proposal. A select or
+ * radio group left with no option is an action menu, and the form is judged on it; a checkbox group
+ * left with none is simply not a parameter.
+ */
+function withholdDestructiveChoices(fields: readonly FieldObservation[], controls: readonly Element[], form: Element): WithheldChoices {
+  const found = destructiveChoices(controls, form);
+  const emptied = fields.find((field) => {
+    const entry = found.get(field.name);
+    return entry !== undefined && field.inputType !== "checkbox" && (field.options ?? []).every((value) => entry.values.includes(value));
+  });
+  const kept = fields.flatMap((field) => {
+    const entry = found.get(field.name);
+    if (!entry) return [field];
+    // A lone checkbox is a boolean with no options; a destructive one is simply not a parameter.
+    if (!field.options) return field.inputType === "checkbox" ? [] : [field];
+    const options = field.options.filter((value) => !entry.values.includes(value));
+    if (options.length === 0) return field.inputType === "checkbox" ? [] : [field];
+    return [{ ...field, options, withheld: [...new Set(entry.names)] }];
+  });
+  const menu = emptied ? found.get(emptied.name)?.names[0] : undefined;
+  return { fields: kept, ...(menu ? { menu } : {}) };
+}
+
 /**
  * A choice control is the action, whatever the button says, when it is the form's only
  * parameter or when its own name or label calls it the action or operation.
  */
-function choiceIsTheAction(fields: readonly FieldObservation[]): boolean {
+function choiceIsTheAction(fields: readonly FieldObservation[], controls: readonly Element[]): boolean {
   const live = fields.filter((field) => !field.excluded);
   const choices = live.filter((field) => CHOICE_TYPES.has(field.inputType));
   if (live.length === 1 && choices.length === 1) return true;
-  return choices.some((field) => ACTION_FIELD_PATTERN.test(`${field.name} ${field.label ?? ""} ${field.groupLabel ?? ""}`));
+  const spokenName = (value: string) => value.replace(/[_-]+/g, " ");
+  const groups = controls.flatMap((control) => [...control.querySelectorAll("optgroup")].map((group) => group.getAttribute("label") ?? ""));
+  return (
+    choices.some((field) => ACTION_FIELD_PATTERN.test(spokenName(`${field.name} ${field.label ?? ""} ${field.groupLabel ?? ""}`))) ||
+    groups.some((label) => ACTION_FIELD_PATTERN.test(label))
+  );
 }
 
 function observeForm(form: Element, document: Document): FormObservation {
@@ -548,11 +601,14 @@ function observeForm(form: Element, document: Document): FormObservation {
   const { submit, actionLabel, riskLabels, implicitBlocked } = primaryAction(form, buttons, document);
   const primaryMethod = submit?.formMethod ?? method;
   const controls = formControls(form, document);
-  const fields = observeFields(controls, form, selector, document);
+  const { fields, menu } = withholdDestructiveChoices(observeFields(controls, form, selector, document), controls, form);
   const choices = choiceNames(controls, form);
-  // Judged on every name a button carries, so an aria-label override on a visibly generic button changes nothing.
-  const judged = (names: readonly string[], effectiveMethod: "get" | "post") =>
-    names.some(isGenericAction) || (effectiveMethod === "post" && choiceIsTheAction(fields)) ? choices : [];
+  // Judged on every name a button carries, so an aria-label override on a visibly generic button changes nothing;
+  // a choice control whose every option is destructive is the action whatever the button says.
+  const judged = (names: readonly string[], effectiveMethod: "get" | "post") => [
+    ...(names.some(isGenericAction) || (effectiveMethod === "post" && choiceIsTheAction(fields, controls)) ? choices : []),
+    ...(menu ? [menu] : []),
+  ];
   const { kind, riskClass, evidence } = classifyForm(primaryMethod, actionLabel, form, fields, [...riskLabels, ...judged(riskLabels, primaryMethod)]);
   // An excluded form is still listed without a submission path, so the owner sees why nothing was proposed.
   const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";

@@ -169,7 +169,8 @@ function anchorPattern(pattern: string): string {
 }
 
 function propertyFor(field: FieldObservation): PropertySchema {
-  const description = truncate(field.label ?? field.placeholder ?? field.name, PARAMETER_DESCRIPTION_BUDGET);
+  const withheld = field.withheld?.length ? `. Withheld: ${field.withheld.join(", ")}` : "";
+  const description = truncate(`${field.label ?? field.placeholder ?? field.name}${withheld}`, PARAMETER_DESCRIPTION_BUDGET);
   const base: PropertySchema = { type: "string", description };
   if (field.multiple) {
     return { type: "array", description, items: { type: "string", enum: field.options ?? [] }, uniqueItems: true };

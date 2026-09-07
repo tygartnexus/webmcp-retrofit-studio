@@ -93,7 +93,11 @@ const GENERIC_ACTION_TERMS = [
   "送信", "次へ", "保存", "実行", "提交", "继续", "确定",
 ];
 /** Words that add nothing to a generic label: "Submit form", "Go ahead", "OK, continue", "Save now". */
-const GENERIC_FILLER = ["form", "ahead", "now", "please", "and", "the", "changes"];
+const GENERIC_FILLER = [
+  "form", "ahead", "now", "please", "and", "the", "changes",
+  "formular", "formulaire", "formulario", "modulo", "formulier", "änderungen", "modifications", "cambios", "modifiche",
+  "wijzigingen", "送信する", "保存する", "確定する",
+];
 const GENERIC_WORDS = new Set([...GENERIC_ACTION_TERMS, ...GENERIC_FILLER]);
 
 /** True when every word of the label, punctuation and glyphs aside, is a generic verb or filler. */
@@ -103,10 +107,13 @@ export function isGenericAction(label: string): boolean {
 }
 
 /** A choice control whose own name or label says it selects the action ("action", "operation"). */
-export const ACTION_FIELD_PATTERN = /\b(action|operation|op)\b|アクション|操作/iu;
+export const ACTION_FIELD_PATTERN = /\b(actions?|operations?|ops?)\b|アクション|操作/iu;
 
-/** Consent wording on a choice ("I confirm I am over 18") is a statement, not an action; it is not judged. */
-export const CONSENT_PATTERN = /\b(confirm\w*|bestätig\w*|confirm(?:er|ez|é|ée)|conferm\w*|bevestig\w*)\b|確認|确认/giu;
+/**
+ * A first-person statement on a choice ("I confirm I am over 18", "I agree to the terms") is consent,
+ * not an action, and is not judged; "Confirm order" is an action and is.
+ */
+export const CONSENT_STATEMENT_PATTERN = /^(?:i|we|ich|wir|je|j'|nous|yo|nosotros|io|noi|ik|wij)\b|^(?:私|我)/iu;
 export const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
 export const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);

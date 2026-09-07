@@ -135,11 +135,16 @@ against every option name and value of the form's selects,
 radios, and checkboxes (option text, label and aria-label attributes,
 optgroup labels, and a radio's or checkbox's accessible name), so a select
 used as an action menu with a "Delete my account" option excludes the form
-whole. Under a specific button ("Send message", "Save plan") the choices are
-plain data and are not judged, and consent wording on a choice ("I confirm
-I am over 18") is a statement, not an action, while "Confirm deletion" or
-"Confirm cancellation" still finalize because the deverbal nouns are in
-the vocabulary. A label element counts only
+whole. Under a specific button ("Send message", "Save profile") the choices are
+plain data and the form is not judged on them, but a destructive option
+is still withheld from the parameter: the tool's enum leaves it out, the
+parameter description names it ("Withheld: Delete my account"), and a
+person can still choose it on the page. A select or radio group whose
+every option is destructive is an action menu whatever the button says,
+and the form is judged on it; a checkbox group left with no option is not
+a parameter at all. A first-person statement ("I confirm I am over 18", "I agree") is
+consent and is exempt, while "Confirm order" is judged, and "Confirm deletion" or "Confirm cancellation" finalize because the
+deverbal nouns are in the vocabulary. A label element counts only
 when the button really is its control, and a wrapping label names the
 button by its own text, not the button's. An excluded action carries the name, option,
 description, or field that decided it, and the candidates screen shows it

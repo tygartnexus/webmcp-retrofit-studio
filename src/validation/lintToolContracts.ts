@@ -53,7 +53,7 @@ export const PARAMETER_DESCRIPTION_BUDGET = 150;
 /** Name words that read as writes; read-only tools must not carry them. */
 export const WRITE_NAME_WORDS = Object.freeze([
   "create", "update", "delete", "remove", "submit", "send", "post", "book", "register", "finalize", "confirm", "pay",
-  "purchase", "cancel",
+  "purchase", "cancel", "deletion", "cancellation", "removal", "termination",
 ]);
 const WRITE_NAME_PATTERN = new RegExp(`(^|_)(${WRITE_NAME_WORDS.join("|")})(_|$)`, "i");
 

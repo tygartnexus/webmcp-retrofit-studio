@@ -21,6 +21,13 @@ export interface Classification {
  * "Delete account" look like a write; a name that is only a neutral word
  * ("Continue", "Next step") carries no risk signal of its own.
  */
+/** The first name that would exclude an action: a credential or finalize match that is not a neutral phrase. */
+export function destructiveName(names: readonly string[]): string | undefined {
+  return names.find(
+    (name) => !NEUTRAL_ACTION_PATTERN.test(name.trim()) && (CREDENTIAL_ACTION_PATTERN.test(name) || FINALIZE_PATTERN.test(name)),
+  );
+}
+
 function fieldName(field: FieldObservation | undefined): string | undefined {
   return field ? `${field.label ?? field.name} field` : undefined;
 }
