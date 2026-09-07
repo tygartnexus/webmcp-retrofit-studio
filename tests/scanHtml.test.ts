@@ -55,7 +55,7 @@ describe("generic HTML scanner", () => {
       label: "Priority",
       required: true,
       options: ["low", "high"],
-      selector: '#contact-form [name="priority"]',
+      selector: '#contact-form input[type="radio"][name="priority"]',
     });
     expect(form.fields.filter((field) => field.name === "priority")).toHaveLength(1);
   });

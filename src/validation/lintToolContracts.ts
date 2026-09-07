@@ -47,8 +47,9 @@ export interface ContractLintReport {
 const REGISTRATION_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/;
 const NAME_BUDGET = 30;
 const DESCRIPTION_MIN = 10;
-const DESCRIPTION_BUDGET = 500;
-const PARAMETER_DESCRIPTION_BUDGET = 150;
+/** Chrome's guidance; shared with inference so descriptions are clipped to what the lint accepts. */
+export const DESCRIPTION_BUDGET = 500;
+export const PARAMETER_DESCRIPTION_BUDGET = 150;
 /** Name words that read as writes; read-only tools must not carry them. */
 export const WRITE_NAME_WORDS = Object.freeze([
   "create", "update", "delete", "remove", "submit", "send", "post", "book", "register", "finalize", "confirm", "pay",

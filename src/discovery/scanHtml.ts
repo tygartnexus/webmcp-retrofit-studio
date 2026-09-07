@@ -185,11 +185,16 @@ const STEP_WORDS = ["step", "page", "schritt", "seite", "étape", "paso", "pági
 const CONTINUE_TERMS = ["continue", "go back", "skip", "fortfahren", "continuer", "continuar", "prosegui", "doorgaan"];
 const CONTINUE_TERMS_CJK = ["続ける", "继续"];
 
-/** The whole label is a step word, optionally followed by a step or page word and a number. */
-function wholeLabel(latin: readonly string[], cjk: readonly string[]): RegExp {
+/**
+ * The whole label is one of the words, optionally followed by a step or page
+ * word and a number. With `bareSteps`, a step word alone ("Page 2") also
+ * matches; that is right for wizard buttons but not for a pager direction.
+ */
+function wholeLabel(latin: readonly string[], cjk: readonly string[], bareSteps = false): RegExp {
   const words = `(?:${[...latin, ...cjk].join("|")})`;
   const steps = `(?:${STEP_WORDS.join("|")})`;
-  return new RegExp(`^(?:${words}(?:\\s+${steps})?|${steps})\\s*\\d*$`, "iu");
+  const body = bareSteps ? `${words}(?:\\s+${steps})?|${steps}` : `${words}(?:\\s+${steps})?`;
+  return new RegExp(`^(?:${body})\\s*\\d*$`, "iu");
 }
 
 const PREVIOUS_PATTERN = wholeLabel(PREVIOUS_TERMS, PREVIOUS_TERMS_CJK);
@@ -198,6 +203,7 @@ const NEXT_PATTERN = wholeLabel(NEXT_TERMS, NEXT_TERMS_CJK);
 const NAVIGATION_PATTERN = wholeLabel(
   [...PREVIOUS_TERMS, ...NEXT_TERMS, ...CONTINUE_TERMS],
   [...PREVIOUS_TERMS_CJK, ...NEXT_TERMS_CJK, ...CONTINUE_TERMS_CJK],
+  true,
 );
 const PAYMENT_NAME_PATTERN = /(card|cvv|cvc|expir|iban|routing|account ?number)/i;
 
@@ -247,6 +253,11 @@ function selectorFor(element: Element, document: Document): string {
 
 function attributeSelector(scope: string, attribute: string, value: string): string {
   return `${scope} [${attribute}="${CSS.escape(value)}"]`;
+}
+
+/** Radio and checkbox groups are addressed by type and name, never catching a same-name text control. */
+function groupSelector(scope: string, inputType: string, name: string): string {
+  return `${scope} input[type="${inputType}"][name="${CSS.escape(name)}"]`;
 }
 
 function nearestHeading(element: Element, document: Document): string {
@@ -327,7 +338,8 @@ function controlSelector(control: Element, formSelector: string, inputType: stri
   if (nameAttribute) {
     const sharing = control.closest("form")?.querySelectorAll(attributeSelector("", "name", nameAttribute).trim()).length ?? 1;
     const grouped = inputType === "radio" || inputType === "checkbox";
-    if (sharing === 1 || grouped) return attributeSelector(formSelector, "name", nameAttribute);
+    if (grouped) return groupSelector(formSelector, inputType, nameAttribute);
+    if (sharing === 1) return attributeSelector(formSelector, "name", nameAttribute);
   }
   return structuralSelector(control, document);
 }
@@ -447,7 +459,7 @@ function collapseCheckboxGroups(fields: readonly FieldObservation[], formSelecto
         ...(groupLabel ? { label: groupLabel } : {}),
         kind: "enum",
         multiple: true,
-        selector: attributeSelector(formSelector, "name", field.name),
+        selector: groupSelector(formSelector, "checkbox", field.name),
       };
       groups.set(field.name, group);
       collapsed.push(group);
@@ -478,7 +490,7 @@ function collapseRadioGroups(
     }
     const existing = groups.get(field.name);
     if (!existing) {
-      const group = { ...field, selector: attributeSelector(formSelector, "name", field.name) };
+      const group = { ...field, selector: groupSelector(formSelector, "radio", field.name) };
       groups.set(field.name, group);
       collapsed.push(group);
       continue;
@@ -495,11 +507,17 @@ function collapseRadioGroups(
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
-  return [...form.querySelectorAll("button, input[type=submit]")].map((button) => {
+  return [...form.querySelectorAll("button, input[type=submit], input[type=image]")].map((button) => {
     const formAction = button.getAttribute("formaction")?.trim();
     const formMethod = button.getAttribute("formmethod")?.toLowerCase();
+    const imageLabel = button.getAttribute("alt")?.trim() || button.getAttribute("title")?.trim();
     return {
-      label: button.tagName === "INPUT" ? (button.getAttribute("value") ?? "Submit") : text(button),
+      label:
+        button.tagName === "INPUT"
+          ? (button.getAttribute("type") ?? "").toLowerCase() === "image"
+            ? imageLabel || "Submit"
+            : (button.getAttribute("value") ?? "Submit")
+          : text(button),
       type: (button.getAttribute("type") ?? "submit").toLowerCase(),
       selector: selectorFor(button, document),
       ...(formAction ? { formAction } : {}),
@@ -543,11 +561,14 @@ function classifyForm(
  * container. Never a hidden value.
  */
 const ROW_LABEL_BUDGET = 60;
-const NON_VISIBLE_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
+const NON_VISIBLE_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT", "TEXTAREA", "SELECT", "OPTION"]);
+/** Common stylesheet-driven hiding; inline styles are checked separately. Stylesheets themselves are not evaluated. */
+const HIDDEN_CLASS_PATTERN = /(^|\s)(sr-only|visually-hidden|visuallyhidden|hidden|d-none|screen-reader-text|is-hidden)(\s|$)/i;
 
 function isHiddenElement(element: Element): boolean {
   if (NON_VISIBLE_TAGS.has(element.tagName)) return true;
   if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return true;
+  if (HIDDEN_CLASS_PATTERN.test(element.getAttribute("class") ?? "")) return true;
   const style = (element.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
   return style.includes("display:none") || style.includes("visibility:hidden");
 }
@@ -576,7 +597,9 @@ function rowLabelFor(form: Element): string | undefined {
     (sibling) => sibling.tagName === container.tagName && sibling.querySelector("form"),
   );
   if (repeated.length < 2) return undefined;
-  const heading = container.querySelector("h1, h2, h3, h4, h5, h6, legend, strong");
+  const heading = [...container.querySelectorAll("h1, h2, h3, h4, h5, h6, legend, strong")].find(
+    (candidate) => !form.contains(candidate),
+  );
   const fromHeading = heading ? visibleText(heading) : "";
   if (fromHeading) return clipLabel(fromHeading);
   const firstText = [...container.children].filter((child) => child !== form && !child.contains(form)).map(visibleText).find(Boolean);
@@ -591,10 +614,10 @@ function buttonCapability(
   fields: readonly FieldObservation[],
 ): CapabilityObservation {
   const effectiveMethod = button.formMethod ?? method;
-  const { riskClass } = classifyForm(effectiveMethod, button.label, form, fields);
+  const { kind, riskClass } = classifyForm(effectiveMethod, button.label, form, fields);
   return {
     id: `action:${button.selector}`,
-    kind: "form",
+    kind,
     selector: button.selector,
     heading: base.heading,
     ...(base.rowLabel ? { rowLabel: base.rowLabel } : {}),
@@ -615,6 +638,8 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   const buttons = observeButtons(form, document);
   const submit = buttons.find((button) => button.type === "submit") ?? buttons[0];
   const actionLabel = submit?.label ?? "Submit";
+  const primaryMethod = submit?.formMethod ?? method;
+  const primaryAction = submit?.formAction;
   const fields = dedupeFieldNames(
     collapseCheckboxGroups(
       collapseRadioGroups(
@@ -627,14 +652,15 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
     ),
     selector,
   );
-  const { kind, riskClass } = classifyForm(method, actionLabel, form, fields);
+  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
   const primary: CapabilityObservation = {
     id: `${kind}:${selector}`,
     kind,
     selector,
     heading,
     ...(rowLabel ? { rowLabel } : {}),
-    method,
+    ...(primaryAction ? { action: primaryAction } : {}),
+    method: primaryMethod,
     actionLabel,
     riskClass,
     fields,
@@ -693,10 +719,16 @@ function paginationScope(table: Element): Element[] {
   const isRoot = parent === parent.ownerDocument.body || parent === parent.ownerDocument.documentElement;
   if (tables.length <= 1 && !isRoot) return [parent];
   const scope: Element[] = [];
-  let sibling = table.nextElementSibling;
-  while (sibling && sibling.tagName !== "TABLE") {
-    scope.push(sibling);
-    sibling = sibling.nextElementSibling;
+  // Only a lone table claims the siblings before it; between two tables a pager belongs to the one above it.
+  let before = tables.length <= 1 ? table.previousElementSibling : null;
+  while (before && before.tagName !== "TABLE") {
+    scope.push(before);
+    before = before.previousElementSibling;
+  }
+  let after = table.nextElementSibling;
+  while (after && after.tagName !== "TABLE") {
+    scope.push(after);
+    after = after.nextElementSibling;
   }
   return scope;
 }
@@ -763,7 +795,8 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
     .map((table) => observeTable(table, document))
     .filter((table): table is CapabilityObservation => table !== null);
   const capabilities = withUniqueIds([...forms, ...tables]);
-  const allFields = capabilities.flatMap((capability) => capability.fields);
+  // Button capabilities re-carry their form's fields; count each observed control once.
+  const allFields = [...new Map(capabilities.flatMap((capability) => capability.fields).map((field) => [field.id, field])).values()];
 
   return deepFreeze({
     snapshotId: snapshot.id,

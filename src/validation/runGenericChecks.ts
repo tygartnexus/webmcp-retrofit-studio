@@ -225,7 +225,11 @@ const checkNoSubmit: Check = async (context) => {
   try {
     const guarded = await withSubmitGuard(async () => {
       for (const [name, tool] of context.tools) {
-        await tool.execute(sampleFor(context, name), { signal: liveSignal() });
+        try {
+          await tool.execute(sampleFor(context, name), { signal: liveSignal() });
+        } catch {
+          // A tool's own failure is another check's finding; this one only measures submission.
+        }
       }
     });
     submissions = guarded.submissions;

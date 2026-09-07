@@ -1,4 +1,4 @@
-import { WRITE_NAME_WORDS } from "../validation/lintToolContracts";
+import { DESCRIPTION_BUDGET, PARAMETER_DESCRIPTION_BUDGET, WRITE_NAME_WORDS } from "../validation/lintToolContracts";
 import { canonicalJson, sha256Hex } from "./scanOwnedFixture";
 import type {
   CapabilityObservation,
@@ -69,11 +69,9 @@ const NAME_BUDGET = 30;
 /** Room for `_NNN` so a suffixed name still fits the budget. */
 const SUFFIX_HEADROOM = 4;
 const MAX_NAME_SUFFIX = 999;
-const DESCRIPTION_BUDGET = 150;
 const LEADING_VERBS = /^(search|find|filter|browse|look ?up|read|view|show|list)\s+/i;
 /** A label that is nothing but a search verb names no object. */
 const BARE_SEARCH_VERB = /^(search|find|filter|browse|look ?up|go|suchen|rechercher|buscar|cerca|pesquisar|zoeken|検索|搜索)$/i;
-const DESCRIPTION_MAX = 500;
 const FINALIZE_REASON =
   "Finalizing actions stay on the visible interface behind the human presence ceremony; no tool can perform them.";
 const CREDENTIAL_REASON = "Credential entry never becomes a tool; the person signs in on the visible interface.";
@@ -158,7 +156,7 @@ function anchorPattern(pattern: string): string {
 }
 
 function propertyFor(field: FieldObservation): PropertySchema {
-  const description = truncate(field.label ?? field.placeholder ?? field.name, DESCRIPTION_BUDGET);
+  const description = truncate(field.label ?? field.placeholder ?? field.name, PARAMETER_DESCRIPTION_BUDGET);
   const base: PropertySchema = { type: "string", description };
   if (field.multiple) {
     return { type: "array", description, items: { type: "string", enum: field.options ?? [] }, uniqueItems: true };
@@ -222,7 +220,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
     return {
       name: uniqueName(stemFor("read_", noun, "read_", true), taken),
       title: `Read ${noun}`,
-      description: `Read rows from the ${noun} table with paging. This tool does not modify state.`,
+      description: truncate(`Read rows from the ${noun} table with paging. This tool does not modify state.`, DESCRIPTION_BUDGET),
       inputSchema: tableSchema(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       riskClass: "read",
@@ -236,7 +234,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
       title: `Search ${noun}`,
-      description: `Search ${noun} using the ${capability.heading} form. This tool does not modify state.`,
+      description: truncate(`Search ${noun} using the ${capability.heading} form. This tool does not modify state.`, DESCRIPTION_BUDGET),
       inputSchema: schemaFromFields(capability.fields),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       riskClass: "read",
@@ -253,7 +251,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
       row
         ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`
         : `Submit the "${action}" form on ${capability.heading}. This changes state and is staged for human review before anything final.`,
-      DESCRIPTION_MAX,
+      DESCRIPTION_BUDGET,
     ),
     inputSchema: schemaFromFields(capability.fields),
     annotations: { readOnlyHint: false, untrustedContentHint: true },

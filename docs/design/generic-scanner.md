@@ -71,9 +71,10 @@ Tables: the header comes from `thead` cells, else the first row made only of
 the table's own neighbourhood (its container when it holds one table,
 otherwise the siblings up to the next table) and only from links with
 `rel="prev"`/`rel="next"` or whose whole text is previous/next wording
-("Next page", "Zurück"); never from "the first link" and never from a
-"Back to dashboard" style link. A table placed directly under body only sees
-its neighbouring siblings.
+("Next page", "Zurück"); never from "the first link", never from a
+"Back to dashboard" style link, and never from a bare page number ("Page 2"),
+which is neither direction. A lone table sees its neighbouring siblings on
+both sides; between two tables a pager belongs to the table above it.
 
 Buttons: `type="button"` controls whose whole label is step-navigation
 wording (next, back, previous, continue, skip and their translations,
@@ -82,10 +83,17 @@ safety envelope; "Next of kin" is an action, "Next step" is navigation.
 Other `type="button"` controls and every submit button beyond the first
 become their own capability, classified by their own label, and a submit
 button's `formaction` and `formmethod` override the form's for that
-capability. A form inside a table row or a repeated container carries a row
-label taken from visible text only (hidden, aria-hidden, display:none, and
-script content are skipped), clipped to 60 characters: the first non-form
-cell, or the block's heading, or its first visible text.
+capability, including the first submit button; an image submit uses its
+alt text as the label. Excluded controls are counted once per form even
+when several capabilities share the form's fields. A form inside a table row or a repeated container carries a row
+label taken from visible text only, clipped to 60 characters: the first
+non-form cell, or the block's heading outside the form, or its first visible
+text. Hidden means the hidden attribute, aria-hidden, inline display:none or
+visibility:hidden, common hiding classes (sr-only, visually-hidden, hidden,
+d-none), and script, style, template, textarea, and select content.
+Stylesheets are not evaluated, so text hidden only by an external rule under
+another class name is still visible to the scan; owners should check row
+labels in the proposal.
 
 ### Classification
 
@@ -139,8 +147,9 @@ whenever they are unique.
 
 Tool names follow the contract lint budget (30 characters, lowercase,
 underscore) and are made unique with numeric suffixes. Per-row tools fold
-the row label into name, title, and description, with descriptions clipped
-to the lint budget. Read-only names never carry write words, whatever the
+the row label into name, title, and description; every description,
+including search and table descriptions built from a heading, is clipped to
+the lint budget. Read-only names never carry write words, whatever the
 page heading said ("Orders to cancel" reads as `read_orders_to`). A search
 tool whose only label is the word "Search" is named after its heading. A label with no Latin
 letters gets a deterministic stem from a short hash of the label

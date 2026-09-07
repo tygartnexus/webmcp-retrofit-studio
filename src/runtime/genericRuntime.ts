@@ -118,7 +118,7 @@ function setControlValue(control: Element, field: FieldObservation, value: Valid
   }
   if (field.inputType === "checkbox") {
     const box = control as HTMLInputElement;
-    box.checked = field.multiple ? Array.isArray(value) && value.includes(box.getAttribute("value") ?? "") : Boolean(value);
+    box.checked = field.multiple ? Array.isArray(value) && value.includes(box.getAttribute("value") || "on") : Boolean(value);
     return;
   }
   (control as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value = String(value);
