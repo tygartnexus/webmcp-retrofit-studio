@@ -152,6 +152,23 @@ function vocabulary(latin: readonly string[], cjk: readonly string[], anchored =
   return new RegExp(`${latinGroup}|${cjkGroup}`, "iu");
 }
 
+/*
+ * Ambiguous verbs followed by an explicit read or neutral object are not
+ * exclusions: "Remove filter" clears a filter, "Acceder al catálogo" opens a
+ * catalogue, "Entrar em contato" gets in touch. The verb alone still excludes.
+ */
+const NEUTRAL_VERBS = ["remove", "clear", "reset", "cancel", "annuler", "cancelar", "annulla", "acceder al?", "entrar e[mn]", "accedi al", "accéder au", "accéder à"];
+const NEUTRAL_ARTICLES = ["the", "el", "la", "los", "las", "o", "a", "il", "le", "les", "de", "du", "des"];
+const NEUTRAL_OBJECTS = [
+  "filters?", "filtros?", "filtres?", "filtri", "search", "búsqueda", "recherche", "ricerca", "busca", "catálogo",
+  "catalogo", "catalogue", "catalog", "contato", "contacto", "contact", "contatto", "lists?", "lista", "liste",
+  "selection", "selección", "sélection", "selezione", "seleção", "view", "vista", "vue", "sort", "orden", "ordre",
+];
+const NEUTRAL_ACTION_PATTERN = new RegExp(
+  `^(?:${NEUTRAL_VERBS.join("|")})\\s+(?:(?:${NEUTRAL_ARTICLES.join("|")})\\s+)?(?:${NEUTRAL_OBJECTS.join("|")})\\b`,
+  "iu",
+);
+
 const FINALIZE_PATTERN = vocabulary(FINALIZE_TERMS, FINALIZE_TERMS_CJK);
 const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
@@ -474,10 +491,13 @@ function classifyForm(
   const roleSearch = form.getAttribute("role") === "search";
   const hasSearchInput = fields.some((field) => field.inputType === "search");
   const labels = [actionLabel, ...fields.map((field) => field.label ?? "")].join(" ");
-  if (hasCredential || CREDENTIAL_ACTION_PATTERN.test(actionLabel)) return { kind: "form", riskClass: "credential" };
-  if (hasPayment || FINALIZE_PATTERN.test(actionLabel)) return { kind: "form", riskClass: "finalize" };
+  const neutral = NEUTRAL_ACTION_PATTERN.test(actionLabel.trim());
+  if (hasCredential || (!neutral && CREDENTIAL_ACTION_PATTERN.test(actionLabel))) {
+    return { kind: "form", riskClass: "credential" };
+  }
+  if (hasPayment || (!neutral && FINALIZE_PATTERN.test(actionLabel))) return { kind: "form", riskClass: "finalize" };
   const readSignal =
-    roleSearch || hasSearchInput || SEARCH_PATTERN.test(labels) || READ_ACTION_PATTERN.test(actionLabel.trim());
+    neutral || roleSearch || hasSearchInput || SEARCH_PATTERN.test(labels) || READ_ACTION_PATTERN.test(actionLabel.trim());
   if (method === "get" && readSignal) return { kind: "search", riskClass: "read" };
   // A GET form with no read signal is still an action; stage it rather than assume it is safe.
   return { kind: "form", riskClass: "write" };

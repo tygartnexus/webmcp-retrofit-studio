@@ -83,6 +83,22 @@ export function slugify(input: string): string {
     .replace(/_+/g, "_");
 }
 
+/** FNV-1a, 32-bit, six hex characters: a deterministic stem for labels that slugify to nothing. */
+function shortHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of input) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0").slice(0, 6);
+}
+
+/** A name stem from a label: its slug, or a hashed stem when the label has no Latin letters. */
+function stemFor(prefix: string, label: string, fallbackPrefix: string): string {
+  const slug = slugify(label);
+  return slug ? `${prefix}${slug}` : `${fallbackPrefix}${shortHash(label)}`;
+}
+
 function budgetName(name: string, budget: number = NAME_BUDGET): string {
   if (name.length <= budget) return name;
   const cut = name.slice(0, budget);
@@ -192,7 +208,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   if (capability.kind === "table" && capability.table) {
     const noun = capability.heading;
     return {
-      name: uniqueName(`read_${slugify(noun)}`, taken),
+      name: uniqueName(stemFor("read_", noun, "read_"), taken),
       title: `Read ${noun}`,
       description: `Read rows from the ${noun} table with paging. This tool does not modify state.`,
       inputSchema: tableSchema(),
@@ -206,7 +222,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   if (capability.kind === "search") {
     const noun = objectNoun(capability);
     return {
-      name: uniqueName(`search_${slugify(noun)}`, taken),
+      name: uniqueName(stemFor("search_", noun, "search_"), taken),
       title: `Search ${noun}`,
       description: `Search ${noun} using the ${capability.heading} form. This tool does not modify state.`,
       inputSchema: schemaFromFields(capability.fields),
@@ -219,7 +235,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   const action = capability.actionLabel;
   const row = capability.rowLabel;
   return {
-    name: uniqueName(slugify(row ? `${action} ${row}` : action), taken),
+    name: uniqueName(stemFor("", row ? `${action} ${row}` : action, "write_"), taken),
     title: row ? `${action}: ${row}` : action,
     description: row
       ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`

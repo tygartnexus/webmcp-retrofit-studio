@@ -215,6 +215,9 @@ const EMBED_VALIDATOR = String.raw`
 
 const EMBED_RUNTIME = String.raw`
   var OUTPUT_BUDGET = 1500;
+  var CELL_BUDGET = 200;
+  var MIN_CELL_BUDGET = 8;
+  function clipCell(value, budget) { return value.length <= budget ? value : value.slice(0, budget - 1) + "\u2026"; }
   function abortError() { return new DOMException("Tool execution was cancelled", "AbortError"); }
   function apply(binding, values) {
     Object.keys(values).forEach(function (name) {
@@ -240,12 +243,20 @@ const EMBED_RUNTIME = String.raw`
     var rows = Array.prototype.filter.call(table.querySelectorAll("tr"), function (row) { return row.querySelector("td"); });
     var page = typeof values.page === "number" ? values.page : 1, limit = typeof values.limit === "number" ? values.limit : 25;
     var start = (page - 1) * limit;
-    var slice = rows.slice(start, start + limit).map(function (row) {
+    var raw = rows.slice(start, start + limit).map(function (row) {
       return Array.prototype.map.call(row.querySelectorAll("td"), function (cell) { return (cell.textContent || "").replace(/\s+/g, " ").trim(); });
     });
-    var truncated = false;
+    var cellBudget = CELL_BUDGET;
+    var clipRows = function () { return raw.map(function (row) { return row.map(function (cell) { return clipCell(cell, cellBudget); }); }); };
+    var slice = clipRows();
+    var truncated = slice.some(function (row, i) { return row.some(function (cell, j) { return cell !== raw[i][j]; }); });
     var build = function () { return { columns: binding.outputColumns || [], rows: slice, page: page, limit: limit, totalRows: rows.length, hasMore: start + slice.length < rows.length, truncated: truncated, source: "page-table" }; };
     while (slice.length > 1 && JSON.stringify(build()).length > OUTPUT_BUDGET) { slice = slice.slice(0, -1); truncated = true; }
+    while (JSON.stringify(build()).length > OUTPUT_BUDGET && cellBudget > MIN_CELL_BUDGET) {
+      cellBudget = Math.max(MIN_CELL_BUDGET, Math.floor(cellBudget / 2));
+      slice = clipRows().slice(0, slice.length);
+      truncated = true;
+    }
     return build();
   }
   function execute(tool, input, options) {

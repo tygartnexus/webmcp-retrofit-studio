@@ -56,7 +56,26 @@ pagination links.
 
 Fields keep name, selector, input type, kind, required, label (label-for,
 wrapping label, or aria-label), placeholder, pattern, min, max, maxlength,
-and select options. Field values are never read.
+and select options. Field values are never read. Same-name radios collapse
+into one enum field; two or more same-name checkboxes collapse into one
+multi-select enum field whose value is an array of option keys, labelled by
+the fieldset legend. A lone checkbox stays boolean. Repeated names inside one
+form get numeric suffixes so schema keys stay distinct.
+
+Tables: the header comes from `thead` cells, else the first row made only of
+`th` cells; a table with neither is not modelled. Pagination is read from
+the table's own neighbourhood (its container when it holds one table,
+otherwise the siblings up to the next table) and only from links with
+`rel="prev"`/`rel="next"` or previous/next wording; never from "the first
+link".
+
+Buttons: `type="button"` controls whose label starts with step-navigation
+wording (next, back, previous and their translations) are skipped and
+counted in the safety envelope; other `type="button"` controls and every
+submit button beyond the first become their own capability, classified by
+their own label. A form inside a table row or a repeated container carries a
+visible row label (the first non-form cell, or the block's heading), taken
+from visible text only.
 
 ### Classification
 
@@ -71,7 +90,11 @@ and select options. Field values are never read.
 
 Credential wins over finalize, and finalize wins over search, so a checkout
 form with a search box is still excluded, and no search tool is derived from
-a credential or finalize form.
+a credential or finalize form. One narrowing applies before the exclusion
+vocabulary: an ambiguous verb followed by an explicit read or neutral object
+from a fixed list ("Remove filter", "Acceder al catálogo", "Entrar em
+contato") is not an exclusion, and on a GET form it counts as a read signal.
+The verb alone ("Remove", "Acceder", "Entrar") still excludes.
 
 Finalize, credential, and search vocabulary covers English, German, French,
 Spanish, Italian, Portuguese, Dutch, Japanese, and Simplified Chinese action
@@ -103,7 +126,11 @@ whenever they are unique.
 ### Proposal
 
 Tool names follow the contract lint budget (30 characters, lowercase,
-underscore) and are made unique with numeric suffixes. Schemas set
+underscore) and are made unique with numeric suffixes. Per-row tools fold
+the row label into name, title, and description. A label with no Latin
+letters gets a deterministic stem from a short hash of the label
+(`write_1a2b3c`, `search_…`, `read_…`); the original-script label stays in
+the title and description. Schemas set
 `additionalProperties: false`, mark `required` from the HTML attribute, and
 map field kinds to JSON Schema types, enums, formats, and patterns. Every
 proposal is run through `lintToolContracts` in tests.
@@ -115,8 +142,12 @@ the scanner observed and registers it with the page's model context using
 the same fail-closed rollback as the booking adapter: if any registration
 fails, every tool from that scope is aborted.
 
-- Table tools read rows from the bound table with `page` and `limit` and
-  trim rows rather than exceed the 1.5K-character output budget.
+- Table tools read rows from the bound table with `page` and `limit`. Cells
+  are clipped to a shared 200-character budget with an ellipsis, rows are
+  trimmed to fit the 1.5K-character output budget, and a single wide row has
+  its cells shrunk further until it fits; `truncated` covers all three.
+- A search or write tool whose form is missing from the page throws rather
+  than preparing or staging with a null action.
 - Search tools validate input, apply it to the bound controls, and return
   `{ status: "query_prepared", performed: false, request }`. They never
   submit.
@@ -139,7 +170,9 @@ length, pattern, and format.
 ## Deterministic checks
 
 `src/validation/runGenericChecks.ts` registers the tools into a mock model
-context against a fresh inert copy of the page and runs ten checks. Each
+context against a fresh inert copy of the page and runs ten checks. The
+safety envelope reports credential, hidden, and file exclusions and skipped
+navigation buttons. Each
 has a failure-path test that breaks one tool through the `transformTool` or
 `extraTools` seam.
 

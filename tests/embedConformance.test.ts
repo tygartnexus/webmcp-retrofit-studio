@@ -123,6 +123,46 @@ describe("embed table conformance", () => {
   });
 });
 
+describe("embed wide-cell conformance", () => {
+  it("clips cells identically in the studio runtime and the embed", async () => {
+    const rows = Array.from({ length: 4 }, (_, i) => `<tr><td>${"w".repeat(3000)}${i}</td><td>${"v".repeat(900)}</td></tr>`).join("");
+    const snapshot = await createOwnerSnapshot(
+      `<title>Wide</title><h1>Wide</h1><table id="wide"><thead><tr><th>A</th><th>B</th></tr></thead><tbody>${rows}</tbody></table>`,
+    );
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    const embed = bundle.files.find((file) => file.path === "webmcp-retrofit.generated.js")!.content;
+
+    const [studioTool] = createGenericToolDefinitions({
+      hostDocument: new DOMParser().parseFromString(snapshot.html, "text/html"),
+      scan,
+      proposal,
+      modelContext: undefined,
+    });
+    const registered = new Map<string, WebMCP.ModelContextTool>();
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: { registerTool: (tool: WebMCP.ModelContextTool) => registered.set(tool.name, tool) },
+    });
+    try {
+      document.body.innerHTML = new DOMParser().parseFromString(snapshot.html, "text/html").body.innerHTML;
+      new Function(embed)();
+      const embedTool = registered.get(studioTool.name)!;
+      for (const input of [{}, { limit: 1 }, { limit: 100 }]) {
+        const studio = studioTool.execute(input, { signal: new AbortController().signal });
+        const shipped = embedTool.execute(input, { signal: new AbortController().signal });
+        expect(JSON.stringify(shipped)).toBe(JSON.stringify(studio));
+        expect(JSON.stringify(studio).length).toBeLessThanOrEqual(1500);
+      }
+    } finally {
+      Reflect.deleteProperty(document, "modelContext");
+    }
+  });
+});
+
 describe("embed missing-anchor conformance", () => {
   it("throws the same error as the studio runtime when the bound form is gone", async () => {
     const snapshot = await createOwnerSnapshot(

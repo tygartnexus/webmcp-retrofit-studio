@@ -60,6 +60,9 @@ export interface TableReadOutput {
 
 /** Chrome's guidance caps tool output near 1.5K characters. */
 export const OUTPUT_BUDGET_CHARS = 1500;
+/** A single cell never takes more than this many characters; longer text ends in an ellipsis. */
+export const CELL_BUDGET_CHARS = 200;
+const MIN_CELL_BUDGET_CHARS = 8;
 const DEFAULT_PAGE_LIMIT = 25;
 const BRIDGE_COMPATIBILITY_SIGNAL = new AbortController().signal;
 
@@ -73,6 +76,10 @@ function assertExecutionActive(signal: AbortSignal): void {
 
 function cellText(cell: Element): string {
   return (cell.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function clipCell(value: string, budget: number): string {
+  return value.length <= budget ? value : `${value.slice(0, budget - 1)}…`;
 }
 
 function defaultId(): string {
@@ -141,8 +148,11 @@ function readTable(host: Document, capability: CapabilityObservation, page: numb
   const allRows = [...table.querySelectorAll("tr")].filter((row) => row.querySelector("td"));
   const columns = capability.table?.headers ?? [];
   const start = (page - 1) * limit;
-  let rows = allRows.slice(start, start + limit).map((row) => [...row.querySelectorAll("td")].map(cellText));
-  let truncated = false;
+  const rawRows = allRows.slice(start, start + limit).map((row) => [...row.querySelectorAll("td")].map(cellText));
+  let cellBudget = CELL_BUDGET_CHARS;
+  const clipRows = () => rawRows.map((row) => row.map((cell) => clipCell(cell, cellBudget)));
+  let rows = clipRows();
+  let truncated = rows.some((row, index) => row.some((cell, column) => cell !== rawRows[index][column]));
   const output = (): TableReadOutput => ({
     columns,
     rows,
@@ -155,6 +165,12 @@ function readTable(host: Document, capability: CapabilityObservation, page: numb
   });
   while (rows.length > 1 && JSON.stringify(output()).length > OUTPUT_BUDGET_CHARS) {
     rows = rows.slice(0, -1);
+    truncated = true;
+  }
+  // A single wide row: shrink its cells until the row fits, rather than exceed the budget.
+  while (JSON.stringify(output()).length > OUTPUT_BUDGET_CHARS && cellBudget > MIN_CELL_BUDGET_CHARS) {
+    cellBudget = Math.max(MIN_CELL_BUDGET_CHARS, Math.floor(cellBudget / 2));
+    rows = clipRows().slice(0, rows.length);
     truncated = true;
   }
   return output();

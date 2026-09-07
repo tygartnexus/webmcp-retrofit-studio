@@ -1,4 +1,5 @@
 import { inferGenericCapabilities } from "../src/discovery/inferGenericCapabilities";
+import { buildGenericExportBundle } from "../src/export/buildGenericExportBundle";
 import { scanHtml, type CapabilityObservation } from "../src/discovery/scanHtml";
 import { createOwnerSnapshot } from "../src/fixtures/ownerSnapshot";
 import { createGenericToolDefinitions } from "../src/runtime/genericRuntime";
@@ -416,5 +417,96 @@ describe("G4: wizard navigation and multiple submit buttons", () => {
     expect(proposal.excluded.map((e) => e.actionLabel)).toEqual(["Delete application"]);
     const snapshot = await createOwnerSnapshot(html);
     expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
+  });
+});
+
+describe("B7: labels with no Latin letters get deterministic names", () => {
+  it("names Japanese and Chinese forms from a hashed stem and keeps the label in the title", async () => {
+    const html = `<title>注文</title><h1>注文</h1>
+<form id="ja" method="post" action="/ja"><label for="n">お名前</label><input id="n" name="name"><button>送信</button></form>
+<form id="zh" method="get" action="/zh"><input name="q" type="search" aria-label="搜索商品"><button>搜索</button></form>`;
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    const names = proposal.tools.map((tool) => tool.name);
+
+    expect(names[0]).toMatch(/^write_[0-9a-f]{6}$/);
+    expect(names[1]).toMatch(/^search_[0-9a-f]{6}$/);
+    expect(new Set(names).size).toBe(2);
+    expect(proposal.tools[0].title).toBe("送信");
+    const again = await inferGenericCapabilities(scan);
+    expect(again.tools.map((tool) => tool.name)).toEqual(names);
+  });
+});
+
+describe("G5: file exclusions appear in the safety envelope and the evidence", () => {
+  it("counts the excluded file field", async () => {
+    const html = `<title>Upload</title><form id="up" method="post" action="/docs"><label for="d">Document</label><input id="d" name="doc" type="file" required><label for="t">Title</label><input id="t" name="title"><button>Upload</button></form>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+
+    expect(scan.safety.fileFieldsExcluded).toBe(1);
+    const proposal = await inferGenericCapabilities(scan);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    const evidence = JSON.parse(bundle.files[2].content) as { safety: { fileFieldsExcluded: number } };
+    expect(evidence.safety.fileFieldsExcluded).toBe(1);
+  });
+});
+
+describe("N9: a single wide cell no longer blocks export", () => {
+  it("clips cells to the budget, shrinks a lone wide row, and passes output-budget", async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => `<tr><td>${"x".repeat(3000)}${i}</td><td>ok</td></tr>`).join("");
+    const html = `<title>Wide</title><h2>Wide cells</h2><table id="wide"><thead><tr><th>A</th><th>B</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const [read] = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined });
+
+    const result = read.execute({}, { signal: new AbortController().signal }) as { rows: string[][]; truncated: boolean };
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(1500);
+    expect(result.truncated).toBe(true);
+    expect(result.rows[0][0].endsWith("…")).toBe(true);
+    expect(result.rows[0][0].length).toBeLessThanOrEqual(200);
+    expect(result.rows[0][1]).toBe("ok");
+
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.checks.find((check) => check.id === "output-budget")).toMatchObject({ status: "passed" });
+    expect(validation.passed).toBe(10);
+    await expect(buildGenericExportBundle({ snapshot, scan, proposal, validation })).resolves.toBeTruthy();
+  });
+
+  it("shrinks cells further when a single row of many wide columns still exceeds the budget", async () => {
+    const cells = Array.from({ length: 12 }, (_, i) => `<td>${"c".repeat(400)}${i}</td>`).join("");
+    const html = `<title>Many</title><h2>Many columns</h2><table id="many"><thead><tr>${"<th>H</th>".repeat(12)}</tr></thead><tbody><tr>${cells}</tr></tbody></table>`;
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    const [read] = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined });
+    const result = read.execute({}, { signal: new AbortController().signal }) as { rows: string[][]; truncated: boolean };
+
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(1500);
+    expect(result.rows).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+  });
+});
+
+describe("N10: ambiguous verbs with a neutral object are not exclusions", () => {
+  const form = (method: string, label: string) =>
+    `<form method="${method}" action="/x"><label for="f">Field</label><input id="f" name="f"><button>${label}</button></form>`;
+
+  it.each([
+    ["get", "Remove filter", "search", "read"],
+    ["get", "Clear filters", "search", "read"],
+    ["get", "Acceder al catálogo", "search", "read"],
+    ["post", "Entrar em contato", "form", "write"],
+    ["get", "Annuler la recherche", "search", "read"],
+    ["post", "Remove account", "form", "finalize"],
+    ["post", "Remove", "form", "finalize"],
+    ["post", "Acceder", "form", "credential"],
+    ["post", "Entrar", "form", "credential"],
+    ["post", "Iniciar sesión", "form", "credential"],
+    ["post", "Konto löschen", "form", "finalize"],
+  ] as const)("%s form labelled %s is %s/%s", async (method, label, kind, riskClass) => {
+    const scan = await scanOwner(form(method, label));
+    expect(scan.capabilities[0]).toMatchObject({ kind, riskClass });
   });
 });
