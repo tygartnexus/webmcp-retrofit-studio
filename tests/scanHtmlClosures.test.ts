@@ -288,10 +288,9 @@ describe("R28: plain buttons ignore formmethod, and GET submits keep search fiel
     const scan = await scanOwner(html);
     const proposal = await inferGenericCapabilities(scan);
     const tools = proposal.tools.map((t) => [t.name, Object.keys(t.inputSchema.properties)]);
-    // The search field has its own read tool, so the POST write does not also carry it.
+    // The GET submit owns the search field, so the POST write does not carry it and no field-derived search duplicates it.
     expect(tools).toEqual([
       ["save", ["note"]],
-      ["search_orders", ["q"]],
       ["search_results", ["q", "note"]],
     ]);
   });
@@ -370,15 +369,12 @@ describe("R32: checkbox option keys are unique within a group", () => {
 });
 
 describe("R33: a button-derived search names its button in the title", () => {
-  it("distinguishes it from the form's own search", async () => {
+  it("is the form's only search and names the button", async () => {
     const html = `<h1>Orders</h1><form id="o" method="post" action="/save"><label for="q">Orders</label><input id="q" name="q" type="search"><button>Save</button><button type="submit" formmethod="get" formaction="/find">Orders</button></form>`;
     const proposal = await inferGenericCapabilities(await scanOwner(html));
     const searches = proposal.tools.filter((t) => t.riskClass === "read").map((t) => [t.name, t.title]);
-    expect(searches).toEqual([
-      ["search_orders", "Search Orders"],
-      ["search_orders_2", "Search Orders (Orders)"],
-    ]);
-    expect(proposal.tools[2].description).toContain(`through its "Orders" button`);
+    expect(searches).toEqual([["search_orders", "Search Orders (Orders)"]]);
+    expect(proposal.tools[1].description).toContain(`through its "Orders" button`);
   });
 });
 
@@ -557,5 +553,125 @@ describe("R45: a nameless Enter-submitting input still blocks implicit submissio
   it("proposes nothing for a search field beside a nameless text input and no button", async () => {
     const scan = await scanOwner(`<form id="n" method="get"><input type="search" name="q" aria-label="Q"><input type="text"></form>`);
     expect(scan.capabilities).toEqual([]);
+  });
+});
+
+describe("R46: a button outside its form still acts on that form", () => {
+  it("passes the checks and stages against the form's action in studio and embed", async () => {
+    const html = `<form id="ob" method="post" action="/save"><input name="a" aria-label="A"><button>Save</button></form><button type="button" form="ob">Preview</button><button type="submit" form="ob" formaction="/store">Store copy</button>`;
+    const snapshot = await createOwnerSnapshot(html, { fallbackTitle: "QA page" });
+    const scan = await scanHtml(snapshot);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Save", "Preview", "Store copy"]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
+    const names = scan.capabilities.slice(1).map((c) => proposal.tools.find((t) => t.capabilityId === c.id)!.name);
+    const signal = new AbortController().signal;
+
+    const staged: { action: string | null }[] = [];
+    const tools = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined, onStaged: (c) => staged.push(c) });
+    for (const name of names) tools.find((t) => t.name === name)!.execute({ a: "x" }, { signal });
+    expect(staged.map((c) => c.action)).toEqual(["/save", "/store"]);
+
+    const shipped: { action: string | null }[] = [];
+    const listener = (event: Event) => shipped.push((event as CustomEvent<{ action: string | null }>).detail);
+    window.addEventListener("webmcp-retrofit:staged", listener);
+    const { registered, dispose } = await embedTools(html);
+    try {
+      for (const name of names) registered.get(name)!.execute({ a: "x" }, { signal });
+      expect(shipped.map((c) => c.action)).toEqual(["/save", "/store"]);
+    } finally {
+      window.removeEventListener("webmcp-retrofit:staged", listener);
+      dispose();
+    }
+  });
+});
+
+describe("R47: an image's alt joins the button's text in place", () => {
+  it("classifies a finalize action whose verb or object is an icon", async () => {
+    const iconVerb = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button><img alt="Delete"> account</button></form>`);
+    const iconObject = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button>Go <img alt="Delete account"></button></form>`);
+    expect(iconVerb.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    expect(iconObject.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go Delete account", "finalize"]]);
+  });
+});
+
+describe("R48: aria-labelledby names the button first", () => {
+  it("takes the referenced text over aria-label and content, even when the reference is hidden", async () => {
+    const scan = await scanOwner(
+      `<span id="lbl" hidden>Delete account</span><form method="post" action="/x"><input name="a" aria-label="A"><button aria-labelledby="lbl" aria-label="Go">Go</button></form>`,
+    );
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+  });
+});
+
+describe("R49: screen-reader-only text names an icon button", () => {
+  it("keeps a finalizing icon button excluded", async () => {
+    const scan = await scanOwner(
+      `<form method="post" action="/x"><input name="a" aria-label="A"><button><span class="sr-only">Delete account</span><span aria-hidden="true">x</span></button></form>`,
+    );
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+  });
+});
+
+describe("R50: a control belongs to exactly the form its form attribute names", () => {
+  const page = (crossed: string) =>
+    `<form id="A" method="post" action="/a"><input name="aField" aria-label="A field"><input name="x" aria-label="X"${crossed}><input type="password" name="ghost" form="missing"><button>Save A</button></form><form id="B" method="post" action="/b"><input name="bField" aria-label="B field"><button>Save B</button></form>`;
+
+  it("moves an inside control to the named form and drops one naming nothing", async () => {
+    const scan = await scanOwner(page(` form="B"`));
+    const owners = Object.fromEntries(scan.capabilities.map((c) => [c.selector, c.fields.map((f) => f.name)]));
+    expect(owners).toEqual({ "#A": ["aField"], "#B": ["x", "bField"] });
+    expect(scan.capabilities.map((c) => c.riskClass)).toEqual(["write", "write"]);
+    expect(scan.safety.credentialFieldsExcluded).toBe(0);
+  });
+
+  it("fails the bindings check when a field's control names another form", async () => {
+    const scan = await scanOwner(page(""));
+    const proposal = await inferGenericCapabilities(scan);
+    const tampered = await createOwnerSnapshot(page(` form="B"`), { fallbackTitle: "QA page" });
+    const bindings = (await runGenericChecks({ snapshot: tampered, scan, proposal })).checks.find((c) => c.id === "bindings")!;
+    expect(bindings.status).toBe("failed");
+    expect(bindings.detail).toContain("resolves outside its own form");
+  });
+});
+
+describe("R51: a long button suffix cannot push a title past the budget", () => {
+  it("keeps every title within 120 characters and the suffix present", async () => {
+    const label = "Regional office archive locator across every branch and satellite site worldwide extended lookup network directory service";
+    const html = `<form id="f" method="get" action="/x"><input name="q" type="search" aria-label="Term"><button>Find</button><button type="submit" aria-label="${label}">Go</button></form>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(html));
+    expect(proposal.tools).toHaveLength(2);
+    for (const tool of proposal.tools) expect(tool.title.length).toBeLessThanOrEqual(120);
+    expect(proposal.tools[1].title.endsWith(")")).toBe(true);
+  });
+});
+
+describe("R52: disabled controls never block, and skipped navigation buttons are all counted", () => {
+  it("proposes the lone enabled search field", async () => {
+    const scan = await scanOwner(`<form id="s" method="get" action="/q"><input type="search" name="q" aria-label="Q"><input type="text" name="note" disabled></form>`);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.kind])).toEqual([["Submit", "search"]]);
+  });
+
+  it("counts a navigation button associated by a form attribute", async () => {
+    const scan = await scanOwner(`<form id="ob" method="post" action="/save"><input name="a" aria-label="A"><button>Save</button></form><button type="button" form="ob">Next</button>`);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Save"]);
+    expect(scan.safety.navigationButtonsSkipped).toBe(1);
+  });
+});
+
+describe("R53: a GET submit button owns the form's search", () => {
+  it("emits one read tool, aimed at the button's target, and keeps the search field off the write", async () => {
+    const html = `<h1>Notes</h1><form id="n" method="post" action="/save"><input name="q" type="search" aria-label="Query"><input name="note" aria-label="Note"><button>Save</button><button type="submit" formmethod="get" formaction="/find">Find</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.kind, c.fields.map((f) => f.name)])).toEqual([
+      ["form", ["note"]],
+      ["search", ["q", "note"]],
+    ]);
+    const proposal = await inferGenericCapabilities(scan);
+    const reads = proposal.tools.filter((t) => t.riskClass === "read");
+    expect(reads).toHaveLength(1);
+    const read = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined }).find((t) => t.name === reads[0].name)!;
+    const output = read.execute({ q: "x" }, { signal: new AbortController().signal }) as { request: { action: string } };
+    expect(output.request.action).toBe("/find");
   });
 });

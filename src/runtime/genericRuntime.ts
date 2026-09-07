@@ -1,4 +1,5 @@
 import type { GenericProposal, ProposedTool } from "../discovery/inferGenericCapabilities";
+import { formOwner } from "../discovery/formOwner";
 import type { CapabilityObservation, FieldObservation, GenericScanResult } from "../discovery/scanHtml";
 import type { ModelContextLike } from "../webmcp/registerBookingTools";
 import { validateToolInput, type ValidatedToolInput } from "./validateToolInput";
@@ -137,7 +138,7 @@ function applyValues(host: Document, capability: CapabilityObservation, values: 
 /** The form a capability acts on and the target it would post to. Throws rather than staging against nothing. */
 function targetFor(host: Document, capability: CapabilityObservation, toolName: string): { form: Element; action: string | null } {
   const anchor = host.querySelector(capability.selector);
-  const form = anchor?.closest("form") ?? anchor;
+  const form = anchor ? (formOwner(anchor) ?? anchor) : null;
   if (!form) throw new Error(`The form for "${toolName}" is missing from the page`);
   return { form, action: capability.action ?? form.getAttribute("action") };
 }

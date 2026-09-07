@@ -67,6 +67,10 @@ export interface GenericProposal {
 const INFERENCE_VERSION = "generic-inference-v2";
 const NAME_BUDGET = 30;
 const TITLE_BUDGET = 120;
+/** A title keeps at least this much of its base before a suffix is clipped along with it. */
+const MIN_TITLE_BASE = 8;
+/** A button-derived search names its button in the title; the button label itself is clipped first. */
+const VIA_BUTTON_BUDGET = 60;
 /** Room for `_NNN` so a suffixed name still fits the budget. */
 const SUFFIX_HEADROOM = 4;
 const MAX_NAME_SUFFIX = 999;
@@ -139,7 +143,9 @@ function uniqueName(candidate: string, taken: Set<string>): string {
 }
 
 function truncate(value: string, budget: number): string {
-  return value.length <= budget ? value : `${value.slice(0, budget - 1).trimEnd()}…`;
+  if (value.length <= budget) return value;
+  if (budget <= 0) return "";
+  return budget === 1 ? "…" : `${value.slice(0, budget - 1).trimEnd()}…`;
 }
 
 function objectNoun(capability: CapabilityObservation): string {
@@ -218,9 +224,10 @@ function tableSchema(): ProposedToolSchema {
   };
 }
 
-/** A title whose distinguishing suffix survives the budget. */
+/** A title whose distinguishing suffix survives the budget; a suffix that leaves no room is clipped with the base. */
 function titled(base: string, suffix: string): string {
-  return `${truncate(base, TITLE_BUDGET - suffix.length)}${suffix}`;
+  const room = TITLE_BUDGET - suffix.length;
+  return room >= MIN_TITLE_BASE ? `${truncate(base, room)}${suffix}` : truncate(`${base}${suffix}`, TITLE_BUDGET);
 }
 
 function proposeTool(capability: CapabilityObservation, taken: Set<string>, tableStems: Map<string, number>): ProposedTool {
@@ -247,7 +254,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>, tabl
   }
   if (capability.kind === "search") {
     const noun = objectNoun(capability);
-    const viaButton = capability.id.startsWith("action:") ? ` (${capability.actionLabel})` : "";
+    const viaButton = capability.id.startsWith("action:") ? ` (${truncate(capability.actionLabel, VIA_BUTTON_BUDGET)})` : "";
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
       title: titled(`Search ${noun}`, viaButton),

@@ -102,14 +102,24 @@ tel, email, password, date, month, week, time, datetime-local, number);
 selects and textareas do not count. A button-less form whose action is
 credential or finalize is still listed as excluded, and its controls still
 count in the safety envelope. Button labels follow the accessible-name
-order: aria-label, then content (visible text, or a visible image's alt,
-or an input's value or alt), then title, then a generic word; labels are
-clipped to 120 characters. Controls associated to a form by a form
-attribute count as its controls, for fields, buttons, classification, and
-the envelope, and a nameless Enter-submitting input still blocks implicit
-submission. When a search field has its own read tool, the form's write
-tool does not also carry it. Tool titles are clipped to 120 characters
-with any distinguishing suffix kept, and the second and later tables under
+order: aria-labelledby (the referenced text, hidden or not), then
+aria-label, then content as assistive technology reads it (hidden markup
+skipped, an image's alt in place, screen-reader-only text included, or an
+input's value or alt), then title, then a generic word; labels are clipped
+to 120 characters. Form ownership follows HTML: a form attribute names the
+owner, a form attribute naming nothing leaves the control with no form,
+and otherwise the enclosing form owns it. The scanner, the checks, the
+studio runtime, and the embed all resolve ownership this way
+(`src/discovery/formOwner.ts`), so a control counts for exactly one form
+and a button outside its form still stages against that form. A disabled
+control never submits, so it neither blocks nor enables implicit
+submission, while a nameless Enter-submitting input still blocks it.
+Skipped navigation buttons are counted from the controls each form owns.
+When a search field has its own read tool, or a GET submit button already
+offers one, the form's write tool does not carry the search field, and no
+field-derived search is emitted beside a GET submit's. Tool titles are
+clipped to 120 characters with any distinguishing suffix kept (a button
+suffix is itself clipped to 60 characters), and the second and later tables under
 one heading carry an ordinal in their title. `input type="button"`
 counts like a `button type="button"`. A GET submit button keeps the form's
 search fields. Excluded controls are counted once per form even when

@@ -1,4 +1,5 @@
 import { slugify, type GenericProposal } from "../discovery/inferGenericCapabilities";
+import { formOwner } from "../discovery/formOwner";
 import type { GenericScanResult } from "../discovery/scanHtml";
 import type { HtmlSnapshot } from "../fixtures/genericFixtures";
 import {
@@ -157,15 +158,13 @@ const checkBindings: Check = (context) => {
       `"${name}" selector ${capability.selector} matches ${anchors.length} element(s); expected exactly one`,
     );
     const anchor = anchors[0];
-    const scope = capability.kind === "table" ? anchor : (anchor.closest("form") ?? anchor);
+    const scope = capability.kind === "table" ? anchor : (formOwner(anchor) ?? anchor);
     for (const field of capability.fields.filter((candidate) => !candidate.excluded)) {
       const controls = [...host.querySelectorAll(field.selector)];
       expectCondition(controls.length > 0, `"${name}" field ${field.name} does not resolve on the page`);
-      const scopeId = scope.getAttribute("id");
-      const belongs = (control: Element) =>
-        scope.contains(control) || (scopeId !== null && control.getAttribute("form") === scopeId);
+      // A control belongs to the form that owns it, so one inside the form but naming another does not.
       expectCondition(
-        controls.every(belongs),
+        controls.every((control) => formOwner(control) === scope),
         `"${name}" field ${field.name} resolves outside its own form`,
       );
       fieldSelectors += 1;

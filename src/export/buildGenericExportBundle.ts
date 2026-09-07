@@ -269,6 +269,14 @@ const EMBED_RUNTIME = String.raw`
     if (JSON.stringify(build()).length > OUTPUT_BUDGET) throw new Error("The table has too many columns to fit the output budget");
     return build();
   }
+  function formOwner(control) {
+    var reference = control.getAttribute("form");
+    if (reference !== null) {
+      var target = document.getElementById(reference);
+      return target && target.tagName === "FORM" ? target : null;
+    }
+    return control.closest("form");
+  }
   function execute(tool, input, options) {
     var signal = options && options.signal;
     if (signal && signal.aborted) throw abortError();
@@ -276,7 +284,7 @@ const EMBED_RUNTIME = String.raw`
     var binding = tool.binding;
     if (binding.kind === "table") return readTable(binding, values);
     var anchor = document.querySelector(binding.selector);
-    var form = anchor && (anchor.closest("form") || anchor);
+    var form = anchor && (formOwner(anchor) || anchor);
     if (!form) throw new Error("The form for \"" + tool.name + "\" is missing from the page");
     var applied = apply(binding, values);
     var action = binding.action || form.getAttribute("action");

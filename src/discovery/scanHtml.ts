@@ -1,7 +1,8 @@
 import type { HtmlSnapshot } from "../fixtures/genericFixtures";
 import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
-import { clipLabel, isHiddenElement, text, visibleText } from "./scanText";
+import { formControls } from "./formOwner";
+import { accessibleContent, clipLabel, text, visibleText } from "./scanText";
 import {
   CREDENTIAL_ACTION_PATTERN,
   FINALIZE_PATTERN,
@@ -386,21 +387,24 @@ function clipTo(value: string, budget: number): string {
   return value.length <= budget ? value : `${value.slice(0, budget - 1)}…`;
 }
 
-/** The alt text of an image inside the button that a person can actually see. */
-function visibleImageAlt(button: Element): string | undefined {
-  const visible = [...button.querySelectorAll("img[alt]")].find((image) => {
-    for (let node: Element | null = image; node && node !== button; node = node.parentElement) {
-      if (isHiddenElement(node)) return false;
-    }
-    return true;
-  });
-  return visible?.getAttribute("alt")?.trim() || undefined;
+/** The text of the elements an aria-labelledby names, hidden or not, in the order named. */
+function referencedName(button: Element): string | undefined {
+  const name = (button.getAttribute("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => button.ownerDocument.getElementById(id))
+    .filter((element): element is HTMLElement => element !== null)
+    .map((element) => accessibleContent(element, true))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return name || undefined;
 }
 
 /**
- * Accessible-name order: aria-label wins over content, content (text, then a
- * visible image's alt, or an input's value or alt) wins over title, and a
- * generic word stands in when nothing names the control.
+ * Accessible-name order: aria-labelledby, then aria-label, then content as
+ * assistive technology reads it (text with image alt in place, or an input's
+ * value or alt), then title, then a generic word when nothing names the control.
  */
 function buttonLabel(button: Element, type: string): string {
   const ariaLabel = button.getAttribute("aria-label")?.trim();
@@ -408,29 +412,11 @@ function buttonLabel(button: Element, type: string): string {
   const fallback = type === "button" ? "Button" : "Submit";
   const content =
     button.tagName !== "INPUT"
-      ? text(button) || visibleImageAlt(button)
+      ? accessibleContent(button)
       : type === "image"
         ? button.getAttribute("alt")?.trim()
         : button.getAttribute("value")?.trim();
-  return clipTo(ariaLabel || content || title || fallback, LABEL_BUDGET);
-}
-
-/**
- * Controls that belong to a form: those inside it plus those associated to it
- * by a form attribute, in document order. Image buttons are included even
- * though form.elements omits them.
- */
-function formControls(form: Element, document: Document): Element[] {
-  const inside = [...form.querySelectorAll("input, select, textarea, button")];
-  const id = form.getAttribute("id");
-  const outside = id
-    ? [...document.querySelectorAll(`[form="${CSS.escape(id)}"]`)].filter(
-        (element) => /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(element.tagName) && element.closest("form") !== form,
-      )
-    : [];
-  return [...inside, ...outside].sort((a, b) =>
-    a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-  );
+  return clipTo(referencedName(button) || ariaLabel || content || title || fallback, LABEL_BUDGET);
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
@@ -533,21 +519,11 @@ function buttonCapability(
 interface FormObservation {
   capabilities: CapabilityObservation[];
   fields: FieldObservation[];
+  navigationSkipped: number;
 }
 
-function observeForm(form: Element, document: Document): FormObservation {
-  const selector = selectorFor(form, document);
-  const rowLabel = rowLabelFor(form);
-  const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
-  const heading = nearestHeading(form, document);
-  const buttons = observeButtons(form, document);
-  // The primary action is the first submitting control; a plain button never stands in for it.
-  const submit = buttons.find((button) => isSubmitType(button.type));
-  const actionLabel = submit?.label ?? "Submit";
-  const primaryMethod = submit?.formMethod ?? method;
-  const primaryAction = submit?.formAction;
-  const controls = formControls(form, document);
-  const fields = dedupeFieldNames(
+function observeFields(controls: readonly Element[], form: Element, selector: string, document: Document): FieldObservation[] {
+  return dedupeFieldNames(
     collapseCheckboxGroups(
       collapseRadioGroups(
         controls
@@ -560,53 +536,85 @@ function observeForm(form: Element, document: Document): FormObservation {
     ),
     selector,
   );
-  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
-  // Without a submitting control a form only submits implicitly, and only with a single Enter-submitting
-  // input, nameless ones included. An excluded form is still listed, so the owner sees why nothing was proposed.
-  const blockers = controls.filter(
+}
+
+/**
+ * Without a submitting control a form only submits implicitly, and only with a single
+ * Enter-submitting input, nameless ones included. A disabled control never submits, so it
+ * neither blocks nor enables that path.
+ */
+function implicitSubmitters(controls: readonly Element[]): Element[] {
+  return controls.filter(
     (control) =>
-      control.tagName === "INPUT" && IMPLICIT_SUBMIT_TYPES.has((control.getAttribute("type") ?? "text").toLowerCase()),
+      control.tagName === "INPUT" &&
+      !control.hasAttribute("disabled") &&
+      IMPLICIT_SUBMIT_TYPES.has((control.getAttribute("type") ?? "text").toLowerCase()),
   );
+}
+
+/** The read tool a search field gets when no button already offers one. */
+function fieldSearch(searchFields: readonly FieldObservation[], selector: string, heading: string): CapabilityObservation {
+  return {
+    id: `search:${selector}`,
+    kind: "search",
+    selector: searchFields[0].selector,
+    heading,
+    method: "get",
+    actionLabel: clipTo(searchFields[0].label ?? "Search", LABEL_BUDGET),
+    riskClass: "read",
+    fields: searchFields,
+    buttons: [],
+  };
+}
+
+function observeForm(form: Element, document: Document): FormObservation {
+  const selector = selectorFor(form, document);
+  const rowLabel = rowLabelFor(form);
+  const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
+  const heading = nearestHeading(form, document);
+  const buttons = observeButtons(form, document);
+  // The primary action is the first submitting control; a plain button never stands in for it.
+  const submit = buttons.find((button) => isSubmitType(button.type));
+  const actionLabel = submit?.label ?? "Submit";
+  const primaryMethod = submit?.formMethod ?? method;
+  const controls = formControls(form, document);
+  const fields = observeFields(controls, form, selector, document);
+  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
+  // An excluded form is still listed without a submission path, so the owner sees why nothing was proposed.
   const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
-  const hasPrimary = submit !== undefined || blockers.length === 1 || primaryIsExcluded;
+  const hasPrimary = submit !== undefined || implicitSubmitters(controls).length === 1 || primaryIsExcluded;
+  const base = { heading, rowLabel };
+  const plain = buttons.filter((candidate) => candidate.type === "button");
+  const buttonExtras = [
+    ...plain.filter((candidate) => !isNavigation(candidate)).map((button) => buttonCapability(button, base, "post", form, fields)),
+    ...buttons
+      .filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)
+      .map((button) => buttonCapability(button, base, method, form, fields)),
+  ];
+  // A search field gets its own read tool unless a GET submit button already offers one; either way the write does not carry it.
   const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);
-  const emitSearch = hasPrimary && kind !== "search" && !primaryIsExcluded && searchFields.length > 0;
+  const buttonSearch = buttonExtras.some((extra) => extra.kind === "search");
+  const emitSearch = hasPrimary && kind !== "search" && !primaryIsExcluded && searchFields.length > 0 && !buttonSearch;
+  const searchOwnedElsewhere = kind !== "search" && (emitSearch || buttonSearch);
   const primary: CapabilityObservation = {
     id: `${kind}:${selector}`,
     kind,
     selector,
     heading,
     ...(rowLabel ? { rowLabel } : {}),
-    ...(primaryAction ? { action: primaryAction } : {}),
+    ...(submit?.formAction ? { action: submit.formAction } : {}),
     method: primaryMethod,
     actionLabel,
     riskClass,
-    // A search field with its own read tool is not also a parameter of the write.
-    fields: emitSearch ? fields.filter((field) => field.inputType !== "search") : fields,
+    fields: searchOwnedElsewhere ? fields.filter((field) => field.inputType !== "search") : fields,
     buttons,
   };
-  const extras: CapabilityObservation[] = [];
-  if (emitSearch) {
-    extras.push({
-      id: `search:${selector}`,
-      kind: "search",
-      selector: searchFields[0].selector,
-      heading,
-      method: "get",
-      actionLabel: clipTo(searchFields[0].label ?? "Search", LABEL_BUDGET),
-      riskClass: "read",
-      fields: searchFields,
-      buttons: [],
-    });
-  }
-  const base = { heading, rowLabel };
-  for (const button of buttons.filter((candidate) => candidate.type === "button" && !isNavigation(candidate))) {
-    extras.push(buttonCapability(button, base, "post", form, fields));
-  }
-  for (const button of buttons.filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)) {
-    extras.push(buttonCapability(button, base, method, form, fields));
-  }
-  return { capabilities: hasPrimary ? [primary, ...extras] : extras, fields };
+  const extras = [...(emitSearch ? [fieldSearch(searchFields, selector, heading)] : []), ...buttonExtras];
+  return {
+    capabilities: hasPrimary ? [primary, ...extras] : extras,
+    fields,
+    navigationSkipped: plain.filter(isNavigation).length,
+  };
 }
 
 function isNavigation(button: ButtonObservation): boolean {
@@ -733,11 +741,9 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
 
   const document = new DOMParser().parseFromString(html, "text/html");
   const scriptsIgnored = document.querySelectorAll("script").length;
-  const navigationButtonsSkipped = [...document.querySelectorAll("form button, form input[type=button]")].filter((button) => {
-    const type = (button.getAttribute("type") ?? "submit").toLowerCase();
-    return type === "button" && NAVIGATION_PATTERN.test(buttonLabel(button, type).trim());
-  }).length;
   const observedForms = [...document.querySelectorAll("form")].map((form) => observeForm(form, document));
+  // Counted from the controls each form owns, so a navigation button associated by a form attribute counts too.
+  const navigationButtonsSkipped = observedForms.reduce((sum, observed) => sum + observed.navigationSkipped, 0);
   const forms = observedForms.flatMap((observed) => observed.capabilities);
   const tables = [...document.querySelectorAll("table")]
     .map((table) => observeTable(table, document))
