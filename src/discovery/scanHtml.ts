@@ -418,11 +418,12 @@ function buttonNames(button: Element, type: string): ButtonNames {
   const fallback = type === "button" ? "Button" : "Submit";
   const isInput = button.tagName === "INPUT";
   const content = isInput ? attribute(type === "image" ? "alt" : "value") : accessibleContent(button);
-  const label = clipTo(referencedName(button) || ariaLabel || content || title || fallback, LABEL_BUDGET);
+  const referenced = referencedName(button);
+  const label = clipTo(referenced || ariaLabel || content || title || fallback, LABEL_BUDGET);
   const rendered = isInput ? "" : renderedText(button);
-  // Every name is judged unclipped, title included: a verb past the label budget still counts, and an
-  // icon with a title-only verb is classified too. Only the displayed label is clipped.
-  const names = [label, ariaLabel, content, title, rendered].filter((name): name is string => Boolean(name));
+  // Every name is judged unclipped, the aria-labelledby text and the title included: a verb past the label
+  // budget still counts, and an icon with a title-only verb is classified too. Only the displayed label is clipped.
+  const names = [label, referenced, ariaLabel, content, title, rendered].filter((name): name is string => Boolean(name));
   return { label, riskLabels: [...new Set(names)] };
 }
 

@@ -1,4 +1,4 @@
-import { slugify, type GenericProposal } from "../discovery/inferGenericCapabilities";
+import type { GenericProposal } from "../discovery/inferGenericCapabilities";
 import { formOwner } from "../discovery/formOwner";
 import type { GenericScanResult } from "../discovery/scanHtml";
 import type { HtmlSnapshot } from "../fixtures/genericFixtures";
@@ -130,10 +130,11 @@ const checkInventory: Check = ({ input, tools }) => {
 
 const checkExclusionsAbsent: Check = (context) => {
   const { input, tools } = context;
-  const excludedNames = new Set(input.proposal.excluded.map((item) => slugify(item.actionLabel)));
+  // Identity is the capability, not the label: a safe form may share a button label with an excluded one.
+  const excludedIds = new Set(input.proposal.excluded.map((item) => item.capabilityId));
   for (const name of tools.keys()) {
-    expectCondition(!excludedNames.has(name), `"${name}" matches an excluded action`);
     const tool = proposalTool(context, name);
+    expectCondition(!tool || !excludedIds.has(tool.capabilityId), `"${name}" is bound to an excluded action`);
     const capability = input.scan.capabilities.find((candidate) => candidate.id === tool?.capabilityId);
     expectCondition(capability, `"${name}" is not bound to any scanned capability`);
     expectCondition(

@@ -1,6 +1,7 @@
 import { inferGenericCapabilities } from "../src/discovery/inferGenericCapabilities";
 import { scanHtml } from "../src/discovery/scanHtml";
 import { createOwnerSnapshot } from "../src/fixtures/ownerSnapshot";
+import { runGenericChecks } from "../src/validation/runGenericChecks";
 
 /**
  * Regressions R59 onward from the 2026-09-07 round-nine sweep: risk judged
@@ -166,6 +167,18 @@ describe("R70: a verb past the label budget still classifies", () => {
     const login = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button aria-label="${padding} log in">Go</button></form>`);
     expect(login.capabilities.map((c) => c.riskClass)).toEqual(["credential"]);
   });
+
+  it("excludes a finalize action named only through a long aria-labelledby reference", async () => {
+    const padding = "A".repeat(115);
+    const page = (button: string) =>
+      `<span id="x">${padding} delete account</span><form method="post" action="/x"><input name="a" aria-label="A">${button}</form>`;
+    const enabled = await scanOwner(page(`<button aria-labelledby="x">Go</button>`));
+    expect(enabled.capabilities.map((c) => [c.actionLabel.length, c.riskClass])).toEqual([[120, "finalize"]]);
+    expect((await inferGenericCapabilities(enabled)).tools).toEqual([]);
+    // A disabled default named the same way is still listed as excluded rather than dropped.
+    const disabled = await scanOwner(page(`<button aria-labelledby="x" disabled>Go</button>`));
+    expect(disabled.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+  });
 });
 
 describe("R71: !important with inner whitespace still hides", () => {
@@ -184,5 +197,17 @@ describe("R72: a title carries one ordinal at most", () => {
     const titles = proposal.tools.map((t) => t.title);
     expect(new Set(titles).size).toBe(titles.length);
     for (const title of titles) expect(title).not.toMatch(/\) \(\d+\)$/);
+  });
+});
+
+describe("R73: a safe form is not blocked for sharing a label with an excluded one", () => {
+  it("passes every check when two forms both say Save draft and one is excluded by its title", async () => {
+    const html = `<h2>One</h2><form method="post" action="/one"><input name="a" aria-label="A"><button title="Delete account">Save draft</button></form><h2>Two</h2><form method="post" action="/two"><input name="b" aria-label="B"><button>Save draft</button></form>`;
+    const snapshot = await createOwnerSnapshot(html, { fallbackTitle: "QA page" });
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => t.name)).toEqual(["save_draft"]);
+    expect(proposal.excluded).toHaveLength(1);
+    expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
   });
 });

@@ -2172,6 +2172,7 @@ code,
 .generic-tool-card p {
   margin: 8px 0 0;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .risk-chip {
@@ -2246,6 +2247,7 @@ code,
 .excluded-list strong {
   margin-right: 8px;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .excluded-list p {
