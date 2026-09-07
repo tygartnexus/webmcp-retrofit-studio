@@ -1,5 +1,6 @@
 import { accessibleContent, collapseText, renderedText, text, visibleText } from "./scanText";
-import { CONSENT_STATEMENT_PATTERN } from "./scanVocabulary";
+import { destructiveName } from "./scanClassify";
+import { CONFIRM_FAMILY_PATTERN, CONSENT_STATEMENT_PATTERN } from "./scanVocabulary";
 
 /**
  * Names for controls: field labels, button names in accessible-name order,
@@ -120,22 +121,42 @@ function spoken(value: string | null): string {
  * message") the choices are plain data and are not judged.
  */
 export interface ChoiceOption {
-  /** The option key as it would be submitted; the value attribute, or "on" for a bare checkbox. */
+  /** The option key as it would be submitted: the value attribute, an option's text without one, or "on" for a bare checkbox. */
   value: string;
   /** Every name the option carries, consent wording removed. */
   names: readonly string[];
+  /** The page selects or checks this option by default. */
+  preselected: boolean;
 }
 
-/** "I confirm I am over 18" is consent, not an action; a first-person statement is not judged on a choice. */
+/** The key a select option submits: its value attribute, else its text. */
+export function optionKey(option: Element): string {
+  return option.hasAttribute("value") ? (option.getAttribute("value") ?? "") : accessibleContent(option);
+}
+
+/**
+ * "I confirm I am over 18" is consent, not an action, and is not judged; but a first-person
+ * statement that still carries a destructive verb once the confirm family is set aside
+ * ("I want to delete my account") is judged on that residual.
+ */
 function judgedNames(names: readonly string[]): string[] {
-  return names.map(collapseText).filter((name) => name && !CONSENT_STATEMENT_PATTERN.test(name));
+  return names.map(collapseText).flatMap((name) => {
+    if (!name) return [];
+    if (!CONSENT_STATEMENT_PATTERN.test(name)) return [name];
+    const residual = collapseText(name.replace(CONFIRM_FAMILY_PATTERN, ""));
+    return destructiveName([residual]) ? [residual] : [];
+  });
 }
 
 /** The options of one choice control (a select, radio, or checkbox), each with every name it carries. */
 export function choiceOptions(control: Element, form: Element): ChoiceOption[] {
   if (control.tagName === "SELECT") {
-    return [...control.querySelectorAll("option")].map((option) => ({
-      value: option.getAttribute("value") ?? "",
+    const options = [...control.querySelectorAll("option")];
+    // With no selected attribute a single select shows its first option; a multiple select shows none.
+    const defaultIndex = options.some((option) => option.hasAttribute("selected")) || control.hasAttribute("multiple") ? -1 : 0;
+    return options.map((option, index) => ({
+      value: optionKey(option),
+      preselected: option.hasAttribute("selected") || index === defaultIndex,
       names: judgedNames([
         option.getAttribute("label") ?? "",
         option.getAttribute("aria-label") ?? "",
@@ -148,7 +169,7 @@ export function choiceOptions(control: Element, form: Element): ChoiceOption[] {
   const type = (control.getAttribute("type") ?? "").toLowerCase();
   if (control.tagName === "INPUT" && (type === "radio" || type === "checkbox")) {
     const value = control.getAttribute("value") ?? (type === "checkbox" ? "on" : "");
-    return [{ value, names: judgedNames([choiceName(control, form), spoken(value)]) }];
+    return [{ value, preselected: control.hasAttribute("checked"), names: judgedNames([choiceName(control, form), spoken(value)]) }];
   }
   return [];
 }

@@ -142,8 +142,15 @@ parameter description names it ("Withheld: Delete my account"), and a
 person can still choose it on the page. A select or radio group whose
 every option is destructive is an action menu whatever the button says,
 and the form is judged on it; a checkbox group left with no option is not
-a parameter at all. A first-person statement ("I confirm I am over 18", "I agree") is
-consent and is exempt, while "Confirm order" is judged, and "Confirm deletion" or "Confirm cancellation" finalize because the
+a parameter at all. When the page preselects a withheld option the
+parameter is required, so a tool call always moves the control to a kept
+option and the description says the default was withheld; a preselected
+destructive checkbox that would vanish as a parameter makes the form an
+action menu instead. An option without a value attribute submits its
+text, which is its key. A first-person statement ("I confirm I am over 18", "I agree") is
+consent and is exempt unless it still carries a destructive verb once
+the confirm family is set aside ("I want to delete my account" is
+judged), while "Confirm order" is judged, and "Confirm deletion" or "Confirm cancellation" finalize because the
 deverbal nouns are in the vocabulary. A label element counts only
 when the button really is its control, and a wrapping label names the
 button by its own text, not the button's. An excluded action carries the name, option,

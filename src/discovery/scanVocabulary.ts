@@ -114,6 +114,8 @@ export const ACTION_FIELD_PATTERN = /\b(actions?|operations?|ops?)\b|アクシ�
  * not an action, and is not judged; "Confirm order" is an action and is.
  */
 export const CONSENT_STATEMENT_PATTERN = /^(?:i|we|ich|wir|je|j'|nous|yo|nosotros|io|noi|ik|wij)\b|^(?:私|我)/iu;
+/** The confirm family: the only finalize words a first-person consent statement is allowed to carry. */
+export const CONFIRM_FAMILY_PATTERN = /\b(confirm\w*|bestätig\w*|confirm(?:er|ez|é|ée)|conferm\w*|bevestig\w*)\b|確認|确认/giu;
 export const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
 export const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);

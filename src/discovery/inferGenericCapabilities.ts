@@ -169,7 +169,9 @@ function anchorPattern(pattern: string): string {
 }
 
 function propertyFor(field: FieldObservation): PropertySchema {
-  const withheld = field.withheld?.length ? `. Withheld: ${field.withheld.join(", ")}` : "";
+  const withheld = field.withheld?.length
+    ? `. Withheld${field.withheldDefault ? " (the page's default)" : ""}: ${field.withheld.join(", ")}`
+    : "";
   const description = truncate(`${field.label ?? field.placeholder ?? field.name}${withheld}`, PARAMETER_DESCRIPTION_BUDGET);
   const base: PropertySchema = { type: "string", description };
   if (field.multiple) {

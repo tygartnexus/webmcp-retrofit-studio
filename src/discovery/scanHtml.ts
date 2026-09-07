@@ -3,7 +3,7 @@ import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
 import { formControls, isDisabledControl, ownedControls } from "./formOwner";
 import { classifyForm, destructiveName } from "./scanClassify";
-import { buttonNames, choiceNames, choiceOptions, clipTo, LABEL_BUDGET, labelFor } from "./scanNames";
+import { buttonNames, choiceNames, choiceOptions, clipTo, LABEL_BUDGET, labelFor, optionKey } from "./scanNames";
 import { observeTable } from "./scanTable";
 import { clipLabel, text, visibleText } from "./scanText";
 import {
@@ -52,6 +52,8 @@ export interface FieldObservation {
   options?: readonly string[];
   /** Option names withheld from the parameter because they finalize or need credentials; a person can still pick them on the page. */
   withheld?: readonly string[];
+  /** The page preselects a withheld option, so the parameter is required and must choose a kept one. */
+  withheldDefault?: true;
   /** A same-name checkbox group: the value is an array of option keys. */
   multiple?: true;
   /** Legend of the enclosing fieldset, used to label a checkbox group. */
@@ -224,11 +226,10 @@ function observeField(control: Element, form: Element, formSelector: string, doc
   const min = numberAttribute(control, "min");
   const max = numberAttribute(control, "max");
   const maxLength = numberAttribute(control, "maxlength");
+  // An option without a value attribute submits its text; keys are unique.
   const options =
     control.tagName === "SELECT"
-      ? [...control.querySelectorAll("option")]
-          .map((option) => option.getAttribute("value") ?? "")
-          .filter((value) => value !== "")
+      ? [...new Set([...control.querySelectorAll("option")].map(optionKey).filter((value) => value !== ""))]
       : undefined;
   return {
     ...field,
@@ -536,16 +537,27 @@ interface WithheldChoices {
   menu?: string;
 }
 
+interface DestructiveEntry {
+  values: string[];
+  names: string[];
+  /** The page preselects one of these options. */
+  preselected: boolean;
+}
+
 /** Destructive option keys and names per control name, so a parameter can leave them out. */
-function destructiveChoices(controls: readonly Element[], form: Element): Map<string, { values: string[]; names: string[] }> {
-  const found = new Map<string, { values: string[]; names: string[] }>();
+function destructiveChoices(controls: readonly Element[], form: Element): Map<string, DestructiveEntry> {
+  const found = new Map<string, DestructiveEntry>();
   for (const control of controls) {
     const name = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
     for (const option of choiceOptions(control, form)) {
       const hit = destructiveName(option.names);
       if (!hit) continue;
-      const entry = found.get(name) ?? { values: [], names: [] };
-      found.set(name, { values: [...entry.values, option.value], names: [...entry.names, hit] });
+      const entry = found.get(name) ?? { values: [], names: [], preselected: false };
+      found.set(name, {
+        values: [...entry.values, option.value],
+        names: [...entry.names, hit],
+        preselected: entry.preselected || option.preselected,
+      });
     }
   }
   return found;
@@ -555,22 +567,29 @@ function destructiveChoices(controls: readonly Element[], form: Element): Map<st
  * A destructive option under a specific button is not the form's action, but an agent must never be
  * able to pick it: the option is withheld from the parameter and named in the proposal. A select or
  * radio group left with no option is an action menu, and the form is judged on it; a checkbox group
- * left with none is simply not a parameter.
+ * left with none is simply not a parameter. When the page preselects a withheld option the parameter
+ * becomes required, so a tool call always moves the control to a kept option; a preselected
+ * destructive checkbox that would vanish as a parameter makes the form an action menu instead.
  */
 function withholdDestructiveChoices(fields: readonly FieldObservation[], controls: readonly Element[], form: Element): WithheldChoices {
   const found = destructiveChoices(controls, form);
+  const vanishes = (field: FieldObservation, entry: DestructiveEntry) =>
+    field.inputType === "checkbox" && (!field.options || field.options.every((value) => entry.values.includes(value)));
   const emptied = fields.find((field) => {
     const entry = found.get(field.name);
-    return entry !== undefined && field.inputType !== "checkbox" && (field.options ?? []).every((value) => entry.values.includes(value));
+    if (!entry) return false;
+    if (field.inputType === "checkbox") return vanishes(field, entry) && entry.preselected;
+    return (field.options ?? []).every((value) => entry.values.includes(value));
   });
   const kept = fields.flatMap((field) => {
     const entry = found.get(field.name);
     if (!entry) return [field];
     // A lone checkbox is a boolean with no options; a destructive one is simply not a parameter.
-    if (!field.options) return field.inputType === "checkbox" ? [] : [field];
-    const options = field.options.filter((value) => !entry.values.includes(value));
-    if (options.length === 0) return field.inputType === "checkbox" ? [] : [field];
-    return [{ ...field, options, withheld: [...new Set(entry.names)] }];
+    if (vanishes(field, entry)) return [];
+    const options = (field.options ?? []).filter((value) => !entry.values.includes(value));
+    if (options.length === 0) return [field];
+    const withheld = { withheld: [...new Set(entry.names)], ...(entry.preselected ? { withheldDefault: true as const, required: true } : {}) };
+    return [{ ...field, options, ...withheld }];
   });
   const menu = emptied ? found.get(emptied.name)?.names[0] : undefined;
   return { fields: kept, ...(menu ? { menu } : {}) };

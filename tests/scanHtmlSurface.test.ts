@@ -516,3 +516,53 @@ describe("R92: what a sighted person reads counts toward a generic label", () =>
     expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save profile", "finalize"]]);
   });
 });
+
+describe("R93: a first-person statement is consent only while it carries no destructive verb", () => {
+  it("judges I want to delete my account and exempts I confirm I am over 18", async () => {
+    const page = (button: string) =>
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="checkbox" name="del" value="yes"> I want to delete my account</label><button>${button}</button></form>`;
+    const generic = await scanOwner(page("Go"));
+    expect(generic.capabilities.map((c) => [c.riskClass, c.riskEvidence])).toEqual([["finalize", "I want to delete my account"]]);
+    const specific = await scanOwner(page("Save profile"));
+    expect(specific.capabilities.map((c) => [c.riskClass, c.fields.map((f) => f.name)])).toEqual([["write", ["n"]]]);
+    const german = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="checkbox" name="del" value="ja"> Ich möchte mein Konto löschen</label><button>Weiter</button></form>`,
+    );
+    expect(german.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const consent = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="checkbox" name="age" value="yes"> I confirm I am over 18</label><button>Go</button></form>`,
+    );
+    expect(consent.capabilities.map((c) => [c.riskClass, c.fields.map((f) => f.name)])).toEqual([["write", ["n", "age"]]]);
+  });
+});
+
+describe("R94: a preselected withheld option makes the parameter required", () => {
+  it("requires the select and says the default was withheld, and excludes a checked destructive checkbox", async () => {
+    const contact = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option value="delete" selected>Delete my account</option><option value="q">Question</option></select><button>Send message</button></form>`,
+    );
+    const reason = contact.capabilities[0].fields.find((f) => f.name === "reason")!;
+    expect([reason.options, reason.required, reason.withheldDefault]).toEqual([["q"], true, true]);
+    const proposal = await inferGenericCapabilities(contact);
+    expect(proposal.tools[0].inputSchema.required).toContain("reason");
+    expect((proposal.tools[0].inputSchema.properties.reason as { description: string }).description).toBe("Reason. Withheld (the page's default): Delete my account");
+    const firstOption = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option value="delete">Delete my account</option><option value="q">Question</option></select><button>Send message</button></form>`,
+    );
+    expect(firstOption.capabilities[0].fields.find((f) => f.name === "reason")?.required).toBe(true);
+    const checked = await scanOwner(
+      `<form method="post" action="/x"><input name="e" aria-label="Email"><label><input type="checkbox" name="unsub" value="yes" checked> Unsubscribe from all emails</label><button>Save preferences</button></form>`,
+    );
+    expect(checked.capabilities.map((c) => [c.riskClass, c.riskEvidence])).toEqual([["finalize", "Unsubscribe from all emails"]]);
+  });
+});
+
+describe("R95: option keys follow what the browser submits", () => {
+  it("uses the text of a value-less option and lists each key once", async () => {
+    const scan = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option>Question</option><option value="q">Query</option><option value="q">Again</option><option>Delete my account</option></select><button>Send message</button></form>`,
+    );
+    const reason = scan.capabilities[0].fields.find((f) => f.name === "reason")!;
+    expect([reason.options, reason.withheld]).toEqual([["Question", "q"], ["Delete my account"]]);
+  });
+});
