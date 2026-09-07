@@ -2214,6 +2214,7 @@ code,
   text-align: left;
   vertical-align: top;
   border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
 }
 
 .parameter-table th {
@@ -2372,9 +2373,16 @@ code,
 
 .staged-list li > div {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px;
   align-items: baseline;
+  min-width: 0;
+}
+
+.staged-list li > div > * {
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .confirmed-note {

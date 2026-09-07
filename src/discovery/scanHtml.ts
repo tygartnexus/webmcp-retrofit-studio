@@ -383,9 +383,9 @@ function clipTo(value: string, budget: number): string {
   return value.length <= budget ? value : `${value.slice(0, budget - 1)}…`;
 }
 
-/** The text of the elements an aria-labelledby names, hidden or not, in the order named. */
-function referencedName(button: Element): string | undefined {
-  const name = (button.getAttribute("aria-labelledby") ?? "")
+/** The text of the elements an id-list attribute names, hidden or not, in the order named. */
+function referencedName(button: Element, attribute = "aria-labelledby"): string | undefined {
+  const name = (button.getAttribute(attribute) ?? "")
     .split(/\s+/)
     .filter(Boolean)
     .map((id) => button.ownerDocument.getElementById(id))
@@ -402,10 +402,19 @@ interface ButtonNames {
   riskLabels: string[];
 }
 
+/** A button is labelable: a label element pointing at it, or wrapping it, names it before its own content. */
+function nativeLabel(button: Element): string | undefined {
+  const id = button.getAttribute("id");
+  const byFor = id ? button.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+  const label = byFor ?? button.closest("label");
+  return label ? accessibleContent(label) || undefined : undefined;
+}
+
 /**
  * The label follows accessible-name order: aria-labelledby, then aria-label,
- * then content as assistive technology reads it (text with image alt in
- * place, or an input's value or alt), then title, then a generic word. The
+ * then a label element, then content as assistive technology reads it (text
+ * with image alt and descendant aria-labels in place, or an input's value or
+ * alt), then title, then a generic word. The
  * risk labels are every name the button carries, title included and its
  * rendered text with aria-hidden spans, so an ARIA override cannot hide a
  * finalizing verb from classification.
@@ -419,11 +428,17 @@ function buttonNames(button: Element, type: string): ButtonNames {
   const isInput = button.tagName === "INPUT";
   const content = isInput ? attribute(type === "image" ? "alt" : "value") : accessibleContent(button);
   const referenced = referencedName(button);
-  const label = clipTo(referenced || ariaLabel || content || title || fallback, LABEL_BUDGET);
+  const native = nativeLabel(button);
+  const label = clipTo(referenced || ariaLabel || native || content || title || fallback, LABEL_BUDGET);
   const rendered = isInput ? "" : renderedText(button);
-  // Every name is judged unclipped, the aria-labelledby text and the title included: a verb past the label
-  // budget still counts, and an icon with a title-only verb is classified too. Only the displayed label is clipped.
-  const names = [label, referenced, ariaLabel, content, title, rendered].filter((name): name is string => Boolean(name));
+  // Every name is judged unclipped, the aria-labelledby text, the label element, and the title included: a verb
+  // past the label budget still counts, and an icon with a title-only verb is classified too. Only the displayed
+  // label is clipped.
+  // A description never names the button, but a destructive verb hidden in one is still judged.
+  const described = referencedName(button, "aria-describedby");
+  const names = [label, referenced, ariaLabel, native, content, title, rendered, described].filter(
+    (name): name is string => Boolean(name),
+  );
   return { label, riskLabels: [...new Set(names)] };
 }
 
@@ -484,9 +499,10 @@ function buttonCapability(
   method: "get" | "post",
   form: Element,
   fields: readonly FieldObservation[],
+  choices: readonly string[],
 ): CapabilityObservation {
   const effectiveMethod = button.formMethod ?? method;
-  const { kind, riskClass } = classifyForm(effectiveMethod, button.label, form, fields, button.riskLabels);
+  const { kind, riskClass } = classifyForm(effectiveMethod, button.label, form, fields, [...button.riskLabels, ...choices]);
   return {
     id: `action:${button.selector}`,
     kind,
@@ -534,6 +550,31 @@ function implicitSubmitters(controls: readonly Element[]): Element[] {
     (control) =>
       control.tagName === "INPUT" && IMPLICIT_SUBMIT_TYPES.has((control.getAttribute("type") ?? "text").toLowerCase()),
   );
+}
+
+/** A value attribute read as words, so "delete_account" is judged like "delete account". */
+function spoken(value: string | null): string {
+  return collapseText((value ?? "").replace(/[_-]+/g, " "));
+}
+
+/**
+ * Option names and values of a form's choice controls. A select or radio group
+ * used as an action menu can carry a destructive choice, so every option is
+ * judged like a button name; a form with such a choice is excluded whole.
+ */
+function choiceNames(controls: readonly Element[], form: Element): string[] {
+  return controls
+    .flatMap((control) => {
+      if (control.tagName === "SELECT") {
+        return [...control.querySelectorAll("option")].flatMap((option) => [accessibleContent(option), spoken(option.getAttribute("value"))]);
+      }
+      const type = (control.getAttribute("type") ?? "").toLowerCase();
+      if (control.tagName === "INPUT" && (type === "radio" || type === "checkbox")) {
+        return [labelFor(control, form) ?? "", spoken(control.getAttribute("value"))];
+      }
+      return [];
+    })
+    .filter(Boolean);
 }
 
 /** The read tool a search field gets when no button already offers one. */
@@ -591,7 +632,8 @@ function observeForm(form: Element, document: Document): FormObservation {
   const primaryMethod = submit?.formMethod ?? method;
   const controls = formControls(form, document);
   const fields = observeFields(controls, form, selector, document);
-  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields, riskLabels);
+  const choices = choiceNames(controls, form);
+  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields, [...riskLabels, ...choices]);
   // An excluded form is still listed without a submission path, so the owner sees why nothing was proposed.
   const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
   const implicit = !implicitBlocked && implicitSubmitters(controls).length === 1;
@@ -599,10 +641,10 @@ function observeForm(form: Element, document: Document): FormObservation {
   const base = { heading, rowLabel };
   const plain = buttons.filter((candidate) => candidate.type === "button");
   const buttonExtras = [
-    ...plain.filter((candidate) => !isNavigation(candidate)).map((button) => buttonCapability(button, base, "post", form, fields)),
+    ...plain.filter((candidate) => !isNavigation(candidate)).map((button) => buttonCapability(button, base, "post", form, fields, choices)),
     ...buttons
       .filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)
-      .map((button) => buttonCapability(button, base, method, form, fields)),
+      .map((button) => buttonCapability(button, base, method, form, fields, choices)),
   ];
   // A search field gets its own read tool unless a GET submit button already offers one; either way the write does not carry it.
   const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);

@@ -96,6 +96,10 @@ function rawText(node: Node, audience: Audience, isRoot = false): string {
   if (!isRoot && isExcludedFor(element, audience)) return "";
   if (element.tagName === "IMG") return audience === "sighted" ? "" : ` ${element.getAttribute("alt") ?? ""} `;
   const inner = [...element.childNodes].map((child) => rawText(child, audience)).join("");
+  const own = isRoot || audience === "sighted" ? "" : collapseText(element.getAttribute("aria-label") ?? "");
+  // A descendant's aria-label replaces its content for assistive technology (an icon font's "Delete account");
+  // the rendered audience keeps both, since sight gets the glyph and assistive technology gets the name.
+  if (own) return audience === "rendered" ? ` ${own} ${inner} ` : ` ${own} `;
   return isBlock(element) ? ` ${inner} ` : inner;
 }
 
@@ -111,8 +115,9 @@ export function visibleText(node: Node): string {
 
 /**
  * Name from content as assistive technology reads it: hidden markup is
- * skipped, an image contributes its alt in place, and screen-reader-only
- * text counts because it is rendered for that audience. An element
+ * skipped, an image contributes its alt and a labelled descendant its
+ * aria-label in place, and screen-reader-only text counts because it is
+ * rendered for that audience. An element
  * referenced by aria-labelledby contributes even when hidden.
  */
 export function accessibleContent(node: Node, referenced = false): string {

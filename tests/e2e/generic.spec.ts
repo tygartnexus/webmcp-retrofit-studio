@@ -113,7 +113,7 @@ test("generic flow: an unbroken 200-character label never widens the page", asyn
   await page.getByRole("checkbox", { name: /own or am authorized to analyze this page/i }).check();
   const run = "Z".repeat(200);
   await page.getByRole("textbox", { name: "Page HTML" }).fill(
-    `<title>Long labels</title><form method="post" action="/x"><label for="a">A</label><input id="a" name="a"><button>Save ${run}</button><button formaction="/gone">Delete ${run}</button></form>`,
+    `<title>Long labels</title><form method="post" action="/x"><label for="a">A ${run}</label><input id="a" name="a"><button>Save ${run}</button><button formaction="/gone">Delete ${run}</button></form>`,
   );
   await page.getByRole("button", { name: "Scan pasted page" }).click();
   const proposed = page.getByRole("region", { name: /Proposed tools \(1\)/ });

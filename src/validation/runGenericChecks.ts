@@ -131,6 +131,7 @@ const checkInventory: Check = ({ input, tools }) => {
 const checkExclusionsAbsent: Check = (context) => {
   const { input, tools } = context;
   // Identity is the capability, not the label: a safe form may share a button label with an excluded one.
+  // bind() already refuses an excluded capability before any check runs, so this line is defence in depth.
   const excludedIds = new Set(input.proposal.excluded.map((item) => item.capabilityId));
   for (const name of tools.keys()) {
     const tool = proposalTool(context, name);

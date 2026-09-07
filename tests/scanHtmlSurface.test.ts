@@ -211,3 +211,64 @@ describe("R73: a safe form is not blocked for sharing a label with an excluded o
     expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
   });
 });
+
+describe("R74: a descendant's aria-label names the button in place", () => {
+  it("excludes an icon-font delete button and keeps a safe icon search", async () => {
+    const icon = await scanOwner(post(`<i class="fa fa-trash" aria-label="Delete account"></i>`));
+    expect(icon.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    const svg = await scanOwner(post(`<svg aria-label="Delete account"><path d="M0 0"></path></svg>`));
+    expect(svg.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const mixed = await scanOwner(post(`<span role="img" aria-label="Delete account">x</span> Save`));
+    expect(mixed.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account Save", "finalize"]]);
+    const find = await scanOwner(`<form method="get" action="/q"><input type="search" name="q" aria-label="Q"><button><i aria-label="Search"></i></button></form>`);
+    expect(find.capabilities.map((c) => [c.actionLabel, c.kind])).toEqual([["Search", "search"]]);
+  });
+});
+
+describe("R75: a label element names a button", () => {
+  it("takes a pointing or wrapping label over the button's content", async () => {
+    const pointing = await scanOwner(`<label for="b">Delete account</label><form method="post" action="/x"><input name="a" aria-label="A"><button id="b">Save</button></form>`);
+    expect(pointing.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    const wrapping = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><label>Delete account <button>Save</button></label></form>`);
+    expect(wrapping.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const submit = await scanOwner(`<label for="s">Delete account</label><form method="post" action="/x"><input name="a" aria-label="A"><input id="s" type="submit" value="Save"></form>`);
+    expect(submit.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    const legend = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><fieldset><legend>Delete account</legend><button>Save</button></fieldset></form>`);
+    expect(legend.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save", "write"]]);
+  });
+});
+
+describe("R76: a destructive option excludes the form", () => {
+  it("judges select option text and values, and radio and checkbox labels and values", async () => {
+    const menu = await scanOwner(
+      `<form method="post" action="/x"><input name="a" aria-label="A"><select name="op" aria-label="Action"><option value="save">Save</option><option value="delete_account">Delete my account permanently</option></select><button>Go</button></form>`,
+    );
+    expect(menu.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go", "finalize"]]);
+    expect((await inferGenericCapabilities(menu)).tools).toEqual([]);
+    const byValue = await scanOwner(
+      `<form method="post" action="/x"><input name="a" aria-label="A"><select name="op" aria-label="Action"><option value="keep">Keep</option><option value="delete-account">Remove it</option></select><button>Go</button></form>`,
+    );
+    expect(byValue.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const radio = await scanOwner(
+      `<form method="post" action="/x"><input name="a" aria-label="A"><label><input type="radio" name="r" value="k"> Keep</label><label><input type="radio" name="r" value="c"> Cancel subscription</label><button>Go</button></form>`,
+    );
+    expect(radio.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const safe = await scanOwner(
+      `<form method="post" action="/x"><input name="a" aria-label="A"><select name="op" aria-label="Action"><option value="save">Save</option><option value="archive">Archive</option></select><button>Go</button></form>`,
+    );
+    expect(safe.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go", "write"]]);
+  });
+});
+
+describe("R77: an aria-describedby never names a button but is still judged", () => {
+  it("excludes a Go button whose description finalizes", async () => {
+    const scan = await scanOwner(
+      `<span id="d">This will delete account data</span><form method="post" action="/x"><input name="a" aria-label="A"><button aria-describedby="d">Go</button></form>`,
+    );
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go", "finalize"]]);
+    const safe = await scanOwner(
+      `<span id="d">Saves a draft</span><form method="post" action="/x"><input name="a" aria-label="A"><button aria-describedby="d">Go</button></form>`,
+    );
+    expect(safe.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go", "write"]]);
+  });
+});

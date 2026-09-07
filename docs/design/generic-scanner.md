@@ -103,9 +103,10 @@ selects and textareas do not count. A button-less form whose action is
 credential or finalize is still listed as excluded, and its controls still
 count in the safety envelope. Button labels follow the accessible-name
 order: aria-labelledby (the referenced text, hidden or not), then
-aria-label, then content as assistive technology reads it (hidden markup
-skipped, an image's alt in place, screen-reader-only text included, or an
-input's value or alt), then title, then a generic word; labels are clipped
+aria-label, then a label element pointing at or wrapping the button, then
+content as assistive technology reads it (hidden markup skipped, an image's
+alt and a descendant's own aria-label in place, screen-reader-only text
+included, or an input's value or alt), then title, then a generic word; labels are clipped
 to 120 characters. Form ownership follows HTML: a form attribute names the
 owner, a form attribute naming nothing leaves the control with no form,
 and otherwise the enclosing form owns it. The scanner, the checks, the
@@ -125,8 +126,11 @@ include an icon-font ligature or a tooltip, so a safe action beside an
 aria-hidden "delete" glyph is excluded as well; that is the safe direction,
 and the owner sees it in the excluded list. Risk
 is judged against every name a button carries, unclipped (the accessible
-name, its aria-label, its content, its title, and its rendered text
-including aria-hidden and screen-reader-only spans), while only the
+name, its aria-label, its label element, its content, its title, its
+aria-describedby text, and its rendered text including aria-hidden and
+screen-reader-only spans), and against every option name and value of the
+form's selects, radios, and checkboxes, so a select used as an action menu
+with a "Delete my account" option excludes the form whole; only the
 displayed label is clipped to 120 characters, so an ARIA override cannot turn a visible
 "Delete account" into a write tool.
 Skipped navigation buttons are counted from the controls each form owns.
