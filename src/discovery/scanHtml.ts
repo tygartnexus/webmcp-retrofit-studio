@@ -38,6 +38,8 @@ export interface FieldObservation {
   max?: number;
   maxLength?: number;
   options?: readonly string[];
+  /** A same-name checkbox group: the value is an array of option keys. */
+  multiple?: true;
   excluded?: FieldExclusion;
 }
 
@@ -67,6 +69,8 @@ export interface CapabilityObservation {
   fields: readonly FieldObservation[];
   buttons: readonly ButtonObservation[];
   table?: TableObservation;
+  /** Visible text identifying the row or repeated block this form belongs to. */
+  rowLabel?: string;
 }
 
 export interface ScanSafety {
@@ -76,6 +80,8 @@ export interface ScanSafety {
   scriptsIgnored: number;
   credentialFieldsExcluded: number;
   hiddenFieldsExcluded: number;
+  fileFieldsExcluded: number;
+  navigationButtonsSkipped: number;
   retainedRawValues: false;
 }
 
@@ -130,6 +136,10 @@ const SEARCH_TERMS = [
   "suchen", "filtern", "rechercher", "chercher", "filtrer", "buscar", "filtrar", "cerca", "pesquisar", "zoeken",
 ];
 const SEARCH_TERMS_CJK = ["検索", "搜索"];
+const PREVIOUS_TERMS = ["previous", "prev", "back", "zurück", "précédent", "anterior", "indietro", "vorige", "voltar"];
+const PREVIOUS_TERMS_CJK = ["前へ", "上一页", "前のページ", "戻る"];
+const NEXT_TERMS = ["next", "weiter", "suivant", "siguiente", "avanti", "próximo", "seguinte", "volgende"];
+const NEXT_TERMS_CJK = ["次へ", "下一页", "次のページ"];
 const READ_VERBS = [
   "go", "apply filters?", "sort", "show", "view", "list", "next", "previous", "prev", "page", "refresh", "load more",
   "export", "weiter", "zurück", "anzeigen", "suivant", "précédent", "afficher", "siguiente", "anterior", "mostrar",
@@ -147,6 +157,10 @@ const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
 const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);
 const CREDENTIAL_ACTION_PATTERN = vocabulary(CREDENTIAL_TERMS, CREDENTIAL_TERMS_CJK);
+const PREVIOUS_PATTERN = vocabulary(PREVIOUS_TERMS, PREVIOUS_TERMS_CJK);
+const NEXT_PATTERN = vocabulary(NEXT_TERMS, NEXT_TERMS_CJK);
+/** Wizard navigation: a type="button" whose label starts with a step verb is not an action. */
+const NAVIGATION_PATTERN = vocabulary([...PREVIOUS_TERMS, ...NEXT_TERMS], [...PREVIOUS_TERMS_CJK, ...NEXT_TERMS_CJK], true);
 const PAYMENT_NAME_PATTERN = /(card|cvv|cvc|expir|iban|routing|account ?number)/i;
 
 
@@ -296,6 +310,7 @@ function observeField(control: Element, form: Element, formSelector: string, doc
   };
   if (excluded) return { ...field, excluded };
   if (inputType === "radio") return observeRadio(control, field);
+  if (inputType === "checkbox") return observeCheckbox(control, form, field);
   const label = labelFor(control, form);
   const placeholder = control.getAttribute("placeholder")?.trim();
   const pattern = control.getAttribute("pattern")?.trim();
@@ -351,6 +366,63 @@ function dedupeFieldNames(fields: readonly FieldObservation[], formSelector: str
     const name = `${field.name}_${count}`;
     return { ...field, name, id: `${formSelector}:field:${name}` };
   });
+}
+
+/** A checkbox keeps its static value key so a same-name group can collapse into an enum array. */
+function observeCheckbox(control: Element, form: Element, field: FieldObservation): FieldObservation {
+  const label = labelFor(control, form);
+  const value = control.getAttribute("value") ?? "";
+  return { ...field, ...(label ? { label } : {}), options: value ? [value] : [] };
+}
+
+/**
+ * Two or more same-name checkboxes form a multi-select group: one enum field
+ * whose value is an array of option keys, labelled by the fieldset legend.
+ * A lone checkbox stays a boolean.
+ */
+function collapseCheckboxGroups(fields: readonly FieldObservation[], formSelector: string): FieldObservation[] {
+  const counts = new Map<string, number>();
+  for (const field of fields) {
+    if (field.inputType === "checkbox") counts.set(field.name, (counts.get(field.name) ?? 0) + 1);
+  }
+  const groups = new Map<string, FieldObservation>();
+  const collapsed: FieldObservation[] = [];
+  for (const field of fields) {
+    if (field.inputType !== "checkbox") {
+      collapsed.push(field);
+      continue;
+    }
+    if ((counts.get(field.name) ?? 0) < 2) {
+      const { options: _single, ...lone } = field;
+      collapsed.push(lone);
+      continue;
+    }
+    const existing = groups.get(field.name);
+    if (!existing) {
+      const group: FieldObservation = {
+        ...field,
+        kind: "enum",
+        multiple: true,
+        selector: attributeSelector(formSelector, "name", field.name),
+      };
+      groups.set(field.name, group);
+      collapsed.push(group);
+      continue;
+    }
+    const merged: FieldObservation = {
+      ...existing,
+      required: existing.required || field.required,
+      options: [...(existing.options ?? []), ...(field.options ?? [])],
+    };
+    groups.set(field.name, merged);
+    collapsed[collapsed.indexOf(existing)] = merged;
+  }
+  return collapsed.map((field) => (field.multiple ? withGroupLabel(field, fields) : field));
+}
+
+function withGroupLabel(group: FieldObservation, fields: readonly FieldObservation[]): FieldObservation {
+  const legend = fields.find((field) => field.name === group.name && field.inputType === "checkbox")?.label;
+  return group.label === undefined && legend ? { ...group, label: legend } : group;
 }
 
 /** Same-name radios collapse into one enum field; required if any option is. */
@@ -417,18 +489,65 @@ function classifyForm(
  * becomes its own observation so review and risk classification stay per
  * action rather than per form.
  */
+/**
+ * Visible text that identifies the row or repeated block a form sits in: the
+ * first non-form cell of its table row, or the heading of a repeated sibling
+ * container. Never a hidden value.
+ */
+function rowLabelFor(form: Element): string | undefined {
+  const row = form.closest("tr");
+  if (row) {
+    return [...row.children].filter((cell) => !cell.contains(form)).map(text).find(Boolean);
+  }
+  const container = form.parentElement;
+  const grandparent = container?.parentElement;
+  if (!container || !grandparent) return undefined;
+  const repeated = [...grandparent.children].filter(
+    (sibling) => sibling.tagName === container.tagName && sibling.querySelector("form"),
+  );
+  if (repeated.length < 2) return undefined;
+  const heading = container.querySelector("h1, h2, h3, h4, h5, h6, legend, strong");
+  return text(heading) || undefined;
+}
+
+function buttonCapability(
+  button: ButtonObservation,
+  base: Pick<CapabilityObservation, "heading" | "rowLabel">,
+  method: "get" | "post",
+  form: Element,
+  fields: readonly FieldObservation[],
+): CapabilityObservation {
+  const { riskClass } = classifyForm(method, button.label, form, fields);
+  return {
+    id: `action:${button.selector}`,
+    kind: "form",
+    selector: button.selector,
+    heading: base.heading,
+    ...(base.rowLabel ? { rowLabel: base.rowLabel } : {}),
+    method,
+    actionLabel: button.label,
+    riskClass,
+    fields: fields.filter((field) => field.inputType !== "search"),
+    buttons: [button],
+  };
+}
+
 function observeForm(form: Element, document: Document): CapabilityObservation[] {
   const selector = selectorFor(form, document);
+  const rowLabel = rowLabelFor(form);
   const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
   const heading = nearestHeading(form, document);
   const buttons = observeButtons(form, document);
   const submit = buttons.find((button) => button.type === "submit") ?? buttons[0];
   const actionLabel = submit?.label ?? "Submit";
   const fields = dedupeFieldNames(
-    collapseRadioGroups(
-      [...form.querySelectorAll("input, select, textarea")]
-        .map((control) => observeField(control, form, selector, document))
-        .filter((field): field is FieldObservation => field !== null),
+    collapseCheckboxGroups(
+      collapseRadioGroups(
+        [...form.querySelectorAll("input, select, textarea")]
+          .map((control) => observeField(control, form, selector, document))
+          .filter((field): field is FieldObservation => field !== null),
+        selector,
+      ),
       selector,
     ),
     selector,
@@ -439,6 +558,7 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
     kind,
     selector,
     heading,
+    ...(rowLabel ? { rowLabel } : {}),
     method,
     actionLabel,
     riskClass,
@@ -461,30 +581,68 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
       buttons: [],
     });
   }
-  for (const button of buttons.filter((candidate) => candidate.type === "button")) {
-    const { riskClass: buttonRisk } = classifyForm("post", button.label, form, fields);
-    extras.push({
-      id: `action:${button.selector}`,
-      kind: "form",
-      selector: button.selector,
-      heading,
-      method: "post",
-      actionLabel: button.label,
-      riskClass: buttonRisk,
-      fields: fields.filter((field) => field.inputType !== "search"),
-      buttons: [button],
-    });
+  const base = { heading, rowLabel };
+  for (const button of buttons.filter((candidate) => candidate.type === "button" && !isNavigation(candidate))) {
+    extras.push(buttonCapability(button, base, "post", form, fields));
+  }
+  for (const button of buttons.filter((candidate) => candidate.type === "submit" && candidate !== submit)) {
+    extras.push(buttonCapability(button, base, method, form, fields));
   }
   return [primary, ...extras];
 }
 
+function isNavigation(button: ButtonObservation): boolean {
+  return NAVIGATION_PATTERN.test(button.label.trim());
+}
+
+/** thead cells, else the first row made only of th cells. */
+function headerCells(table: Element): string[] {
+  const fromHead = [...table.querySelectorAll("thead th")].map(text).filter(Boolean);
+  if (fromHead.length > 0) return fromHead;
+  const headerRow = [...table.querySelectorAll("tr")].find(
+    (row) => row.children.length > 0 && [...row.children].every((cell) => cell.tagName === "TH"),
+  );
+  return headerRow ? [...headerRow.children].map(text).filter(Boolean) : [];
+}
+
+/**
+ * Pagination controls belong to the table's own neighbourhood: its container
+ * when it is the only table there, otherwise the siblings between it and the
+ * next table. A link counts only with rel="prev"/"next" or previous/next
+ * wording; never "the first link".
+ */
+function paginationScope(table: Element): Element[] {
+  const parent = table.parentElement;
+  if (!parent) return [];
+  const tables = [...parent.children].filter((child) => child.tagName === "TABLE");
+  if (tables.length <= 1) return [parent];
+  const scope: Element[] = [];
+  let sibling = table.nextElementSibling;
+  while (sibling && sibling.tagName !== "TABLE") {
+    scope.push(sibling);
+    sibling = sibling.nextElementSibling;
+  }
+  return scope;
+}
+
+function paginationFor(table: Element): TableObservation["pagination"] {
+  const links = paginationScope(table).flatMap((element) => [
+    ...(element.matches("a, button") ? [element] : []),
+    ...element.querySelectorAll("a, button"),
+  ]);
+  const wording = (link: Element) => `${text(link)} ${link.getAttribute("aria-label") ?? ""}`.trim();
+  return {
+    previous: links.some((link) => link.getAttribute("rel") === "prev" || PREVIOUS_PATTERN.test(wording(link))),
+    next: links.some((link) => link.getAttribute("rel") === "next" || NEXT_PATTERN.test(wording(link))),
+  };
+}
+
 function observeTable(table: Element, document: Document): CapabilityObservation | null {
-  const headers = [...table.querySelectorAll("thead th")].map((th) => text(th)).filter(Boolean);
+  const headers = headerCells(table);
   if (headers.length === 0) return null;
   const selector = selectorFor(table, document);
-  const rowCount = table.querySelectorAll("tbody tr").length;
-  const previous = document.querySelector('a[rel="prev"], [aria-label*="pagination" i] a:first-of-type') !== null;
-  const next = document.querySelector('a[rel="next"]') !== null;
+  const rowCount = [...table.querySelectorAll("tr")].filter((row) => row.querySelector("td")).length;
+  const { previous, next } = paginationFor(table);
   return {
     id: `table:${selector}`,
     kind: "table",
@@ -520,6 +678,11 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
 
   const document = new DOMParser().parseFromString(html, "text/html");
   const scriptsIgnored = document.querySelectorAll("script").length;
+  const navigationButtonsSkipped = [...document.querySelectorAll("form button, form input[type=submit]")].filter(
+    (button) =>
+      (button.getAttribute("type") ?? "submit").toLowerCase() === "button" &&
+      NAVIGATION_PATTERN.test(text(button).trim()),
+  ).length;
   const forms = [...document.querySelectorAll("form")].flatMap((form) => observeForm(form, document));
   const tables = [...document.querySelectorAll("table")]
     .map((table) => observeTable(table, document))
@@ -544,6 +707,8 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
         (field) => field.excluded === "credential" || field.excluded === "payment-credential",
       ).length,
       hiddenFieldsExcluded: allFields.filter((field) => field.excluded === "hidden").length,
+      fileFieldsExcluded: allFields.filter((field) => field.excluded === "file").length,
+      navigationButtonsSkipped,
       retainedRawValues: false as const,
     },
   });

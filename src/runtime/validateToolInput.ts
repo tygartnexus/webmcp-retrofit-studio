@@ -8,7 +8,7 @@ import type { PropertySchema, ProposedToolSchema } from "../discovery/inferGener
  * format checks. Failures are TypeErrors with the property name.
  */
 
-export type ToolInputValue = string | number | boolean;
+export type ToolInputValue = string | number | boolean | readonly string[];
 export type ValidatedToolInput = Readonly<Record<string, ToolInputValue>>;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -74,8 +74,22 @@ function validateString(key: string, value: unknown, schema: PropertySchema): st
   return value;
 }
 
+function validateArray(key: string, value: unknown, schema: PropertySchema): readonly string[] {
+  if (!Array.isArray(value)) throw new TypeError(`${key} must be an array`);
+  const allowed = schema.items?.enum ?? [];
+  const items = value.map((item, index) => {
+    if (typeof item !== "string") throw new TypeError(`${key}[${index}] must be a string`);
+    if (!allowed.includes(item)) throw new TypeError(`${key} items must be one of: ${allowed.join(", ")}`);
+    return item;
+  });
+  if (schema.uniqueItems && new Set(items).size !== items.length) throw new TypeError(`${key} must not repeat an item`);
+  return Object.freeze(items);
+}
+
 function validateValue(key: string, value: unknown, schema: PropertySchema): ToolInputValue {
   switch (schema.type) {
+    case "array":
+      return validateArray(key, value, schema);
     case "boolean":
       if (typeof value !== "boolean") throw new TypeError(`${key} must be a boolean`);
       return value;

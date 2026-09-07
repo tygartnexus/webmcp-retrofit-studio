@@ -38,6 +38,8 @@ function sampleNumber(schema: PropertySchema): number {
 
 export function sampleValue(schema: PropertySchema): ToolInputValue {
   switch (schema.type) {
+    case "array":
+      return schema.items && schema.items.enum.length > 0 ? [schema.items.enum[0]] : [];
     case "boolean":
       return true;
     case "number":

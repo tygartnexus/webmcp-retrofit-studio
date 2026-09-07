@@ -15,7 +15,7 @@ import { deepFreeze } from "../lib/deepFreeze";
  */
 
 export interface PropertySchema {
-  type: "string" | "number" | "integer" | "boolean";
+  type: "string" | "number" | "integer" | "boolean" | "array";
   description: string;
   enum?: readonly string[];
   format?: string;
@@ -23,6 +23,9 @@ export interface PropertySchema {
   minimum?: number;
   maximum?: number;
   maxLength?: number;
+  /** Multi-select groups: an array of option keys, each used at most once. */
+  items?: { type: "string"; enum: readonly string[] };
+  uniqueItems?: true;
 }
 
 export interface ProposedToolSchema {
@@ -60,7 +63,7 @@ export interface GenericProposal {
   humanConfirmationBoundary: "outside-tool-surface";
 }
 
-const INFERENCE_VERSION = "generic-inference-v1";
+const INFERENCE_VERSION = "generic-inference-v2";
 const NAME_BUDGET = 30;
 /** Room for `_NNN` so a suffixed name still fits the budget. */
 const SUFFIX_HEADROOM = 4;
@@ -129,6 +132,9 @@ function anchorPattern(pattern: string): string {
 function propertyFor(field: FieldObservation): PropertySchema {
   const description = truncate(field.label ?? field.placeholder ?? field.name, DESCRIPTION_BUDGET);
   const base: PropertySchema = { type: "string", description };
+  if (field.multiple) {
+    return { type: "array", description, items: { type: "string", enum: field.options ?? [] }, uniqueItems: true };
+  }
   switch (field.kind) {
     case "number":
       return {
@@ -211,10 +217,13 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
     };
   }
   const action = capability.actionLabel;
+  const row = capability.rowLabel;
   return {
-    name: uniqueName(slugify(action), taken),
-    title: action,
-    description: `Submit the "${action}" form on ${capability.heading}. This changes state and is staged for human review before anything final.`,
+    name: uniqueName(slugify(row ? `${action} ${row}` : action), taken),
+    title: row ? `${action}: ${row}` : action,
+    description: row
+      ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`
+      : `Submit the "${action}" form on ${capability.heading}. This changes state and is staged for human review before anything final.`,
     inputSchema: schemaFromFields(capability.fields),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     riskClass: "write",

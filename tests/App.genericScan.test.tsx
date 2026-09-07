@@ -26,7 +26,7 @@ describe("generic fixture scan (preview only)", () => {
     const excluded = screen.getByRole("region", { name: /Kept off the tool surface \(1\)/ });
     expect(within(excluded).getByText("Place order")).toBeInTheDocument();
     expect(within(excluded).getByText(/presence ceremony/i)).toBeInTheDocument();
-    expect(within(excluded).getByText(/1 credential field and 1 hidden field excluded/)).toBeInTheDocument();
+    expect(within(excluded).getByText(/1 credential field, 1 hidden field, and 0 file fields excluded/)).toBeInTheDocument();
 
     expect(screen.getByRole("status")).toHaveTextContent(/Approval applies only to this proposal version/);
     expect(screen.queryByRole("button", { name: "Approve for preview" })).not.toBeInTheDocument();

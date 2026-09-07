@@ -28,7 +28,7 @@ export interface GenericToolBinding {
   riskClass: ProposedTool["riskClass"];
   selector: string;
   method: "get" | "post";
-  fields: readonly { name: string; selector: string; inputType: string }[];
+  fields: readonly { name: string; selector: string; inputType: string; multiple?: true }[];
   outputColumns?: readonly string[];
 }
 
@@ -108,7 +108,12 @@ function bindingFor(tool: ProposedTool, scan: GenericScanResult): GenericToolBin
     method: capability.method,
     fields: capability.fields
       .filter((field) => !field.excluded)
-      .map((field) => ({ name: field.name, selector: field.selector, inputType: field.inputType })),
+      .map((field) => ({
+        name: field.name,
+        selector: field.selector,
+        inputType: field.inputType,
+        ...(field.multiple ? { multiple: true as const } : {}),
+      })),
     ...(tool.outputColumns ? { outputColumns: tool.outputColumns } : {}),
   };
 }
@@ -160,7 +165,25 @@ const EMBED_VALIDATOR = String.raw`
     if (prop.format === "uri" && !URL.canParse(value)) throw new TypeError(key + " must be an absolute URL");
     return value;
   }
+  function validateArray(key, value, prop) {
+    if (!Array.isArray(value)) throw new TypeError(key + " must be an array");
+    var allowed = (prop.items && prop.items.enum) || [];
+    var items = value.map(function (item, index) {
+      if (typeof item !== "string") throw new TypeError(key + "[" + index + "] must be a string");
+      if (allowed.indexOf(item) < 0) throw new TypeError(key + " items must be one of: " + allowed.join(", "));
+      return item;
+    });
+    if (prop.uniqueItems) {
+      var seen = {};
+      for (var i = 0; i < items.length; i++) {
+        if (seen[items[i]]) throw new TypeError(key + " must not repeat an item");
+        seen[items[i]] = true;
+      }
+    }
+    return Object.freeze(items);
+  }
   function validateValue(key, value, prop) {
+    if (prop.type === "array") return validateArray(key, value, prop);
     if (prop.type === "boolean") {
       if (typeof value !== "boolean") throw new TypeError(key + " must be a boolean");
       return value;
@@ -202,8 +225,11 @@ const EMBED_RUNTIME = String.raw`
       for (var i = 0; i < controls.length; i++) {
         var control = controls[i], value = values[name];
         if (field.inputType === "radio") control.checked = control.getAttribute("value") === String(value);
-        else if (field.inputType === "checkbox") control.checked = Boolean(value);
-        else control.value = String(value);
+        else if (field.inputType === "checkbox") {
+          control.checked = field.multiple
+            ? Array.isArray(value) && value.indexOf(control.getAttribute("value") || "") >= 0
+            : Boolean(value);
+        } else control.value = String(value);
       }
     });
     return values;
@@ -236,7 +262,11 @@ const EMBED_RUNTIME = String.raw`
     if (signal && signal.aborted) throw abortError();
     if (binding.kind === "search") {
       var params = new URLSearchParams();
-      Object.keys(applied).forEach(function (k) { params.append(k, String(applied[k])); });
+      Object.keys(applied).forEach(function (k) {
+        var v = applied[k];
+        if (Array.isArray(v)) v.forEach(function (item) { params.append(k, String(item)); });
+        else params.append(k, String(v));
+      });
       return { status: "query_prepared", performed: false, request: { method: "GET", action: action, query: params.toString() }, applied: applied };
     }
     var id = "staged-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);

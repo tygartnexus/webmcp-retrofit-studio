@@ -270,3 +270,151 @@ describe("N8b: a write or search tool refuses when its form is missing", () => {
     expect(staged).toEqual([]);
   });
 });
+
+describe("B8: header rows without a thead", () => {
+  it("models a tr>th header row and never counts it as data", async () => {
+    const html = `<title>T</title><h2>Back orders</h2><table id="t2"><tr><th>Order</th><th>Total</th></tr><tr><td>A-1</td><td>10</td></tr><tr><td>A-2</td><td>20</td></tr></table>
+<table id="t3"><tr><td>no header</td></tr></table>`;
+    const scan = await scanOwner(html);
+    const [table] = scan.capabilities;
+
+    expect(scan.capabilities.map((c) => c.selector)).toEqual(["#t2"]);
+    expect(table.table).toEqual({ headers: ["Order", "Total"], rowCount: 2, pagination: { previous: false, next: false } });
+    const proposal = await inferGenericCapabilities(scan);
+    const [read] = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined });
+    expect((read.execute({}, { signal: new AbortController().signal }) as { rows: string[][] }).rows).toEqual([
+      ["A-1", "10"],
+      ["A-2", "20"],
+    ]);
+  });
+});
+
+describe("B5: pagination scoped to the table's neighbourhood", () => {
+  it("reports prev/next per table from rel or wording, never from an unrelated first link", async () => {
+    const html = `<title>P</title>
+<section><h2>Recent</h2><table id="a"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<nav aria-label="Pagination"><a href="/help">Help</a><a href="?p=2" rel="next">Next page</a></nav></section>
+<section><h2>Older</h2><table id="b"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<div class="pager"><a href="?p=1">Zurück</a><a href="/about">About us</a></div></section>
+<section><h2>Alone</h2><table id="c"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<nav aria-label="pagination"><a href="/top">Back to top</a></nav></section>`;
+    const scan = await scanOwner(html);
+    const flags = Object.fromEntries(scan.capabilities.map((c) => [c.selector, c.table?.pagination]));
+
+    expect(flags["#a"]).toEqual({ previous: false, next: true });
+    expect(flags["#b"]).toEqual({ previous: true, next: false });
+    expect(flags["#c"]).toEqual({ previous: true, next: false });
+  });
+
+  it("does not let one table's controls leak onto a sibling table", async () => {
+    const html = `<title>P2</title><div><table id="first"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<a href="?p=2" rel="next">Next</a><table id="second"><thead><tr><th>Y</th></tr></thead><tbody><tr><td>2</td></tr></tbody></table></div>`;
+    const scan = await scanOwner(html);
+    const flags = Object.fromEntries(scan.capabilities.map((c) => [c.selector, c.table?.pagination]));
+    expect(flags["#first"]).toEqual({ previous: false, next: true });
+    expect(flags["#second"]).toEqual({ previous: false, next: false });
+  });
+});
+
+describe("G2: same-name checkbox groups", () => {
+  const html = `<title>Prefs</title><form id="prefs" method="post" action="/prefs">
+<fieldset><legend>Interests</legend>
+<label><input type="checkbox" name="interests" value="tools"> Tools</label>
+<label><input type="checkbox" name="interests" value="parts"> Parts</label>
+<label><input type="checkbox" name="interests" value="safety"> Safety</label></fieldset>
+<label><input type="checkbox" name="newsletter"> Newsletter</label>
+<button>Save preferences</button></form>`;
+
+  it("collapses the group into one array-of-enum property and keeps a lone checkbox boolean", async () => {
+    const scan = await scanOwner(html);
+    const [form] = scan.capabilities;
+    const interests = form.fields.find((f) => f.name === "interests")!;
+
+    expect(form.fields.map((f) => f.name)).toEqual(["interests", "newsletter"]);
+    expect(interests).toMatchObject({
+      kind: "enum",
+      multiple: true,
+      options: ["tools", "parts", "safety"],
+      selector: `#prefs [name="interests"]`,
+    });
+    expect(form.fields.find((f) => f.name === "newsletter")).toMatchObject({ kind: "boolean" });
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools[0].inputSchema.properties.interests).toEqual({
+      type: "array",
+      description: expect.any(String),
+      items: { type: "string", enum: ["tools", "parts", "safety"] },
+      uniqueItems: true,
+    });
+    expect(proposal.tools[0].inputSchema.properties.newsletter).toMatchObject({ type: "boolean" });
+  });
+
+  it("checks exactly the chosen boxes and rejects bad arrays", async () => {
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    const page = host(html);
+    const [save] = createGenericToolDefinitions({ hostDocument: page, scan, proposal, modelContext: undefined });
+    const signal = () => new AbortController().signal;
+
+    save.execute({ interests: ["parts", "safety"], newsletter: true }, { signal: signal() });
+    const boxes = [...page.querySelectorAll(`[name="interests"]`)] as HTMLInputElement[];
+    expect(boxes.map((b) => b.checked)).toEqual([false, true, true]);
+    expect((page.querySelector(`[name="newsletter"]`) as HTMLInputElement).checked).toBe(true);
+    expect(() => save.execute({ interests: "parts" }, { signal: signal() })).toThrow(/interests must be an array/);
+    expect(() => save.execute({ interests: ["gold"] }, { signal: signal() })).toThrow(/items must be one of/);
+    expect(() => save.execute({ interests: ["parts", "parts"] }, { signal: signal() })).toThrow(/must not repeat/);
+    const snapshot = await createOwnerSnapshot(html);
+    expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
+  });
+});
+
+describe("G3: per-row forms carry a visible row label", () => {
+  it("names each per-row tool after its row and never reads hidden values", async () => {
+    const html = `<title>Users</title><h2>Users</h2><table id="users"><thead><tr><th>Name</th><th>Role</th><th></th></tr></thead><tbody>
+<tr><td>Alice</td><td>admin</td><td><form method="post" action="/users/17/edit"><input type="hidden" name="id" value="17"><select name="role"><option value="admin">admin</option><option value="viewer">viewer</option></select><button>Edit</button></form></td></tr>
+<tr><td>Bob</td><td>viewer</td><td><form method="post" action="/users/18/edit"><input type="hidden" name="id" value="18"><select name="role"><option value="admin">admin</option><option value="viewer">viewer</option></select><button>Edit</button></form></td></tr>
+</tbody></table>`;
+    const scan = await scanOwner(html);
+    const forms = scan.capabilities.filter((c) => c.kind === "form");
+    expect(forms.map((c) => c.rowLabel)).toEqual(["Alice", "Bob"]);
+
+    const proposal = await inferGenericCapabilities(scan);
+    const names = proposal.tools.filter((t) => t.riskClass === "write").map((t) => [t.name, t.title]);
+    expect(names).toEqual([
+      ["edit_alice", "Edit: Alice"],
+      ["edit_bob", "Edit: Bob"],
+    ]);
+    expect(JSON.stringify(proposal)).not.toContain(`"17"`);
+    expect(scan.safety.hiddenFieldsExcluded).toBe(2);
+  });
+
+  it("uses the heading of a repeated container when there is no table row", async () => {
+    const html = `<title>Cards</title><ul><li><h3>Widget A</h3><form method="post" action="/w/a"><input name="qty" aria-label="Qty"><button>Update</button></form></li>
+<li><h3>Widget B</h3><form method="post" action="/w/b"><input name="qty" aria-label="Qty"><button>Update</button></form></li></ul>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.rowLabel)).toEqual(["Widget A", "Widget B"]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => t.name)).toEqual(["update_widget_a", "update_widget_b"]);
+  });
+});
+
+describe("G4: wizard navigation and multiple submit buttons", () => {
+  it("skips navigation buttons and classifies every submit button on its own label", async () => {
+    const html = `<title>Wizard</title><form id="apply" method="post" action="/apply">
+<fieldset><legend>Step 1</legend><input name="a" aria-label="A"><button type="button">Next</button></fieldset>
+<fieldset><legend>Step 2</legend><input name="b" aria-label="B"><button type="button">Back</button><button type="button">Weiter</button></fieldset>
+<button type="submit">Save draft</button><button type="submit">Delete application</button><button type="button">Review answers</button></form>`;
+    const scan = await scanOwner(html);
+
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([
+      ["Save draft", "write"],
+      ["Review answers", "write"],
+      ["Delete application", "finalize"],
+    ]);
+    expect(scan.safety.navigationButtonsSkipped).toBe(3);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => t.name)).toEqual(["save_draft", "review_answers"]);
+    expect(proposal.excluded.map((e) => e.actionLabel)).toEqual(["Delete application"]);
+    const snapshot = await createOwnerSnapshot(html);
+    expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
+  });
+});

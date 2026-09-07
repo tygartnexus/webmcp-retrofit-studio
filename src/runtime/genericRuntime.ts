@@ -103,14 +103,15 @@ function resolveControls(host: Document, field: FieldObservation): Element[] {
   return controls;
 }
 
-function setControlValue(control: Element, field: FieldObservation, value: string | number | boolean): void {
+function setControlValue(control: Element, field: FieldObservation, value: ValidatedToolInput[string]): void {
   if (field.inputType === "radio") {
     const radio = control as HTMLInputElement;
     radio.checked = radio.getAttribute("value") === String(value);
     return;
   }
   if (field.inputType === "checkbox") {
-    (control as HTMLInputElement).checked = Boolean(value);
+    const box = control as HTMLInputElement;
+    box.checked = field.multiple ? Array.isArray(value) && value.includes(box.getAttribute("value") ?? "") : Boolean(value);
     return;
   }
   (control as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value = String(value);
@@ -199,7 +200,10 @@ function searchTool(binding: Binding, host: Document): WebMCP.ModelContextTool {
       const form = formFor(host, binding.capability, binding.tool.name);
       const applied = applyValues(host, binding.capability, values);
       const query = new URLSearchParams(
-        Object.entries(applied).map(([key, value]) => [key, String(value)]),
+        Object.entries(applied).flatMap(([key, value]) => {
+          const items: readonly (string | number | boolean)[] = Array.isArray(value) ? value : [value];
+          return items.map((item) => [key, String(item)]);
+        }),
       ).toString();
       assertExecutionActive(signal);
       return {

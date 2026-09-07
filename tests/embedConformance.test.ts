@@ -23,6 +23,10 @@ const PAGE = `<!doctype html><title>Order desk</title><h1>Order desk</h1>
     <label><input name="carrier" type="radio" value="ground"> Ground</label>
     <label><input name="carrier" type="radio" value="air"> Air</label>
   </fieldset>
+  <fieldset><legend>Extras</legend>
+    <label><input name="extras" type="checkbox" value="gift"> Gift wrap</label>
+    <label><input name="extras" type="checkbox" value="insure"> Insurance</label>
+  </fieldset>
   <button type="submit">Save request</button>
 </form>`;
 
@@ -69,6 +73,12 @@ const CASES: readonly { label: string; input: unknown }[] = [
   { label: "mail invalid", input: { ...VALID, mail: "nope" } },
   { label: "rush string", input: { ...VALID, rush: "yes" } },
   { label: "carrier outside enum", input: { ...VALID, carrier: "sea" } },
+  { label: "extras valid array", input: { ...VALID, extras: ["gift", "insure"] } },
+  { label: "extras empty array", input: { ...VALID, extras: [] } },
+  { label: "extras not an array", input: { ...VALID, extras: "gift" } },
+  { label: "extras item outside enum", input: { ...VALID, extras: ["gold"] } },
+  { label: "extras duplicate items", input: { ...VALID, extras: ["gift", "gift"] } },
+  { label: "extras non-string item", input: { ...VALID, extras: [1] } },
 ];
 
 describe("embed table conformance", () => {
@@ -191,9 +201,9 @@ describe("embed validator conformance", () => {
         if (studio.ok) accepted += 1;
         else rejected += 1;
       }
-      // Both valid cases, the null-prototype object, and the fractional quantity (a number field) pass.
-      expect(accepted).toBe(4);
-      expect(rejected).toBe(CASES.length - 4);
+      // Both valid cases, the null-prototype object, the fractional quantity (a number field), and the two valid arrays pass.
+      expect(accepted).toBe(6);
+      expect(rejected).toBe(CASES.length - 6);
       expect(stagedEvents).toHaveLength(accepted);
     } finally {
       window.removeEventListener("webmcp-retrofit:staged", onStaged);

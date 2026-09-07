@@ -144,8 +144,9 @@ export function GenericCandidateScreen({ scan, proposal, approved, onApprove, on
             <div>
               <strong>Safety envelope</strong>
               <span>
-                {plural(safety.credentialFieldsExcluded, "credential field")} and{" "}
-                {plural(safety.hiddenFieldsExcluded, "hidden field")} excluded. No raw values retained, no scripts
+                {plural(safety.credentialFieldsExcluded, "credential field")}, {plural(safety.hiddenFieldsExcluded, "hidden field")},
+                {" "}and {plural(safety.fileFieldsExcluded, "file field")} excluded;{" "}
+                {plural(safety.navigationButtonsSkipped, "navigation button")} skipped. No raw values retained, no scripts
                 executed, no network requests.
               </span>
             </div>
