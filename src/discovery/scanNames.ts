@@ -143,7 +143,10 @@ function judgedNames(names: readonly string[]): string[] {
   return names.map(collapseText).flatMap((name) => {
     if (!name) return [];
     if (!CONSENT_STATEMENT_PATTERN.test(name)) return [name];
-    const residual = collapseText(name.replace(CONFIRM_FAMILY_PATTERN, ""));
+    // The residual drops the pronoun too, so the evidence reads "want to delete my account", not "I and delete".
+    const residual = collapseText(
+      collapseText(name.replace(CONFIRM_FAMILY_PATTERN, "").replace(CONSENT_STATEMENT_PATTERN, "")).replace(/^and\s+/i, ""),
+    );
     return destructiveName([residual]) ? [residual] : [];
   });
 }

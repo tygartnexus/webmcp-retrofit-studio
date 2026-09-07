@@ -54,7 +54,7 @@ export interface FieldObservation {
   withheld?: readonly string[];
   /** The page preselects a withheld option, so the parameter is required and must choose a kept one. */
   withheldDefault?: true;
-  /** A same-name checkbox group: the value is an array of option keys. */
+  /** A same-name checkbox group or a multiple select: the value is an array of option keys. */
   multiple?: true;
   /** Legend of the enclosing fieldset, used to label a checkbox group. */
   groupLabel?: string;
@@ -226,10 +226,10 @@ function observeField(control: Element, form: Element, formSelector: string, doc
   const min = numberAttribute(control, "min");
   const max = numberAttribute(control, "max");
   const maxLength = numberAttribute(control, "maxlength");
-  // An option without a value attribute submits its text; keys are unique.
+  // An option without a value attribute submits its text; keys are unique and budgeted so a schema stays bounded.
   const options =
     control.tagName === "SELECT"
-      ? [...new Set([...control.querySelectorAll("option")].map(optionKey).filter((value) => value !== ""))]
+      ? [...new Set([...control.querySelectorAll("option")].map(optionKey).filter((value) => value !== "" && value.length <= OPTION_KEY_BUDGET))]
       : undefined;
   return {
     ...field,
@@ -240,6 +240,7 @@ function observeField(control: Element, form: Element, formSelector: string, doc
     ...(max !== undefined ? { max } : {}),
     ...(maxLength !== undefined ? { maxLength } : {}),
     ...(options ? { options } : {}),
+    ...(control.tagName === "SELECT" && control.hasAttribute("multiple") ? { multiple: true as const } : {}),
   };
 }
 
@@ -530,6 +531,8 @@ function primaryAction(form: Element, buttons: readonly ButtonObservation[], doc
 }
 
 const CHOICE_TYPES = new Set(["select", "radio", "checkbox"]);
+/** An option key longer than this is not offered as an enum member; the schema, not the page, is what has a budget. */
+const OPTION_KEY_BUDGET = 200;
 
 interface WithheldChoices {
   fields: FieldObservation[];

@@ -759,3 +759,31 @@ describe("R58: a button-derived search does not repeat its own label", () => {
     expect(read.description).toContain(`through its "Export" button`);
   });
 });
+
+describe("R96: a multiple select is an array parameter in studio and embed", () => {
+  it("withholds the destructive option, requires the array when it is preselected, and selects exactly the chosen options", async () => {
+    const html = `<form id="f" method="post" action="/x"><input name="n" aria-label="Name"><select name="mode" multiple aria-label="Mode"><option value="k">Keep</option><option value="a">Archive</option><option value="d" selected>Delete my account</option></select><button>Update record</button></form>`;
+    const scan = await scanOwner(html);
+    const mode = scan.capabilities[0].fields.find((f) => f.name === "mode")!;
+    expect([mode.multiple, mode.options, mode.withheld, mode.required]).toEqual([true, ["k", "a"], ["Delete my account"], true]);
+    const proposal = await inferGenericCapabilities(scan);
+    const schema = proposal.tools[0].inputSchema.properties.mode as { type: string; items?: { enum?: string[] } };
+    expect([schema.type, schema.items?.enum, proposal.tools[0].inputSchema.required]).toEqual(["array", ["k", "a"], ["mode"]]);
+
+    const page = host(html);
+    const [tool] = createGenericToolDefinitions({ hostDocument: page, scan, proposal, modelContext: undefined });
+    const signal = new AbortController().signal;
+    expect(() => tool.execute({ n: "x", mode: ["k", "d"] }, { signal })).toThrow(/mode/);
+    tool.execute({ n: "x", mode: ["k", "a"] }, { signal });
+    const selected = (doc: Document) => Array.from(doc.querySelector("select")!.options).map((o) => [o.value, o.selected]);
+    expect(selected(page)).toEqual([["k", true], ["a", true], ["d", false]]);
+
+    const { registered, dispose } = await embedTools(html);
+    try {
+      registered.get(proposal.tools[0].name)!.execute({ n: "x", mode: ["a"] }, { signal });
+      expect(selected(document)).toEqual([["k", false], ["a", true], ["d", false]]);
+    } finally {
+      dispose();
+    }
+  });
+});

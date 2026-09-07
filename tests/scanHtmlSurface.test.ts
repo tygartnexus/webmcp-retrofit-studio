@@ -522,13 +522,15 @@ describe("R93: a first-person statement is consent only while it carries no dest
     const page = (button: string) =>
       `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="checkbox" name="del" value="yes"> I want to delete my account</label><button>${button}</button></form>`;
     const generic = await scanOwner(page("Go"));
-    expect(generic.capabilities.map((c) => [c.riskClass, c.riskEvidence])).toEqual([["finalize", "I want to delete my account"]]);
+    expect(generic.capabilities.map((c) => [c.riskClass, c.riskEvidence])).toEqual([["finalize", "want to delete my account"]]);
     const specific = await scanOwner(page("Save profile"));
     expect(specific.capabilities.map((c) => [c.riskClass, c.fields.map((f) => f.name)])).toEqual([["write", ["n"]]]);
     const german = await scanOwner(
       `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="checkbox" name="del" value="ja"> Ich möchte mein Konto löschen</label><button>Weiter</button></form>`,
     );
     expect(german.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const both = await scanOwner(page("Go").replace("I want to delete my account", "I confirm and delete my account"));
+    expect(both.capabilities.map((c) => c.riskEvidence)).toEqual(["delete my account"]);
     const consent = await scanOwner(
       `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="checkbox" name="age" value="yes"> I confirm I am over 18</label><button>Go</button></form>`,
     );
@@ -564,5 +566,15 @@ describe("R95: option keys follow what the browser submits", () => {
     );
     const reason = scan.capabilities[0].fields.find((f) => f.name === "reason")!;
     expect([reason.options, reason.withheld]).toEqual([["Question", "q"], ["Delete my account"]]);
+  });
+});
+
+describe("R97: an overlong option key is not offered", () => {
+  it("keeps the schema bounded while shorter keys stay", async () => {
+    const long = "Z".repeat(201);
+    const scan = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option>${long}</option><option value="q">Question</option></select><button>Send message</button></form>`,
+    );
+    expect(scan.capabilities[0].fields.find((f) => f.name === "reason")?.options).toEqual(["q"]);
   });
 });

@@ -237,6 +237,9 @@ const EMBED_RUNTIME = String.raw`
           control.checked = field.multiple
             ? Array.isArray(value) && value.indexOf(control.getAttribute("value") === null ? "on" : control.getAttribute("value")) >= 0
             : Boolean(value);
+        } else if (field.inputType === "select" && field.multiple) {
+          var chosen = Array.isArray(value) ? value.map(String) : [];
+          for (var j = 0; j < control.options.length; j++) control.options[j].selected = chosen.indexOf(control.options[j].value) >= 0;
         } else control.value = String(value);
       }
     });

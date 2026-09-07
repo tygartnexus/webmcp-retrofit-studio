@@ -122,6 +122,11 @@ function setControlValue(control: Element, field: FieldObservation, value: Valid
     box.checked = field.multiple ? Array.isArray(value) && value.includes(box.getAttribute("value") ?? "on") : Boolean(value);
     return;
   }
+  if (field.inputType === "select" && field.multiple) {
+    const chosen = Array.isArray(value) ? value.map(String) : [];
+    for (const option of Array.from((control as HTMLSelectElement).options)) option.selected = chosen.includes(option.value);
+    return;
+  }
   (control as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value = String(value);
 }
 
