@@ -146,10 +146,13 @@ a parameter at all. When the page preselects a withheld option the
 parameter is required, so a tool call always moves the control to a kept
 option and the description says the default was withheld; a preselected
 destructive checkbox that would vanish as a parameter makes the form an
-action menu instead. An option without a value attribute submits its
-text with ASCII whitespace collapsed, exactly as the browser computes it,
-and that is its key; a disabled option, or one in a disabled optgroup, is
-never offered. A multiple select is an array parameter like a checkbox
+action menu instead. An option's key is the value the browser computes
+for it (the value attribute, else its text with ASCII whitespace
+collapsed and nothing else changed); a disabled option, or one in a
+disabled optgroup, is never offered, a key is offered only when the first
+option carrying it is, and the page's default is its first enabled option,
+so a disabled placeholder ahead of a destructive option makes that option
+the withheld default. A multiple select is an array parameter like a checkbox
 group, and applying it selects exactly the chosen options. An option key
 longer than 200 characters is not offered, so the schema stays bounded,
 and a select left with nothing to offer is not a parameter at all. A first-person statement ("I confirm I am over 18", "I agree") is

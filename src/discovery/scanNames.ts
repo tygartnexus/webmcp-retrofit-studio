@@ -130,13 +130,12 @@ export interface ChoiceOption {
 }
 
 /**
- * The key a select option submits: its value attribute, else its text with ASCII whitespace
- * stripped and collapsed, exactly as the browser computes the value (zero-width and no-break
- * characters stay, so the key still matches the option when applied).
+ * The key a select option submits, as the browser computes it: the value attribute, else the
+ * option's text with ASCII whitespace stripped and collapsed (script content left out, no-break
+ * and zero-width characters kept). This is the static value of the markup, not a person's input.
  */
 export function optionKey(option: Element): string {
-  if (option.hasAttribute("value")) return option.getAttribute("value") ?? "";
-  return (option.textContent ?? "").replace(/[\t\n\f\r ]+/g, " ").trim();
+  return (option as HTMLOptionElement).value;
 }
 
 /** A disabled option, or one inside a disabled optgroup, is never submitted, so it is never offered. */
@@ -165,8 +164,11 @@ function judgedNames(names: readonly string[]): string[] {
 export function choiceOptions(control: Element, form: Element): ChoiceOption[] {
   if (control.tagName === "SELECT") {
     const options = [...control.querySelectorAll("option")];
-    // With no selected attribute a single select shows its first option; a multiple select shows none.
-    const defaultIndex = options.some((option) => option.hasAttribute("selected")) || control.hasAttribute("multiple") ? -1 : 0;
+    // With no selected attribute a single select shows its first enabled option; a multiple select shows none.
+    const defaultIndex =
+      options.some((option) => option.hasAttribute("selected")) || control.hasAttribute("multiple")
+        ? -1
+        : options.findIndex(isOfferedOption);
     return options.map((option, index) => ({
       value: optionKey(option),
       preselected: option.hasAttribute("selected") || index === defaultIndex,

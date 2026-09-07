@@ -50,7 +50,7 @@ export interface FieldObservation {
   max?: number;
   maxLength?: number;
   options?: readonly string[];
-  /** Option names withheld from the parameter because they finalize or need credentials; a person can still pick them on the page. */
+  /** Option names withheld from the parameter because they finalize or need credentials; the page itself may still offer them. */
   withheld?: readonly string[];
   /** The page preselects a withheld option, so the parameter is required and must choose a kept one. */
   withheldDefault?: true;
@@ -199,6 +199,22 @@ function controlSelector(control: Element, form: Element, formSelector: string, 
   return structuralSelector(control, document);
 }
 
+/**
+ * The keys a select offers: each distinct key once, only when the first option carrying it is one the
+ * browser would submit (applying a key selects the first option with it), never a placeholder, and
+ * never over the key budget, so a schema stays bounded.
+ */
+function offeredKeys(select: Element): string[] {
+  const first = new Map<string, Element>();
+  for (const option of select.querySelectorAll("option")) {
+    const key = optionKey(option);
+    if (!first.has(key)) first.set(key, option);
+  }
+  return [...first]
+    .filter(([key, option]) => key !== "" && key.length <= OPTION_KEY_BUDGET && isOfferedOption(option))
+    .map(([key]) => key);
+}
+
 function observeField(control: Element, form: Element, formSelector: string, document: Document): FieldObservation | null {
   const defaultType = control.tagName === "SELECT" ? "select" : control.tagName === "TEXTAREA" ? "textarea" : "text";
   const inputType = (control.getAttribute("type") ?? defaultType).toLowerCase();
@@ -226,19 +242,7 @@ function observeField(control: Element, form: Element, formSelector: string, doc
   const min = numberAttribute(control, "min");
   const max = numberAttribute(control, "max");
   const maxLength = numberAttribute(control, "maxlength");
-  // An option without a value attribute submits its text; keys are unique, offered only when the browser would
-  // submit them, and budgeted so a schema stays bounded.
-  const options =
-    control.tagName === "SELECT"
-      ? [
-          ...new Set(
-            [...control.querySelectorAll("option")]
-              .filter(isOfferedOption)
-              .map(optionKey)
-              .filter((value) => value !== "" && value.length <= OPTION_KEY_BUDGET),
-          ),
-        ]
-      : undefined;
+  const options = control.tagName === "SELECT" ? offeredKeys(control) : undefined;
   return {
     ...field,
     ...(label ? { label } : {}),

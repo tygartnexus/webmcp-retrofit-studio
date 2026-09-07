@@ -598,6 +598,11 @@ describe("R98: a select offers only what the browser would submit", () => {
     const html = page(`<select name="mode" aria-label="Mode"><option>Ke&#8203;ep</option><option>Non&nbsp;breaking</option></select>`);
     const scan = await scanOwner(html);
     expect(scan.capabilities[0].fields.find((f) => f.name === "mode")?.options).toEqual(["Ke\u200Bep", "Non\u00A0breaking"]);
+    const markup = `<select name="edge" aria-label="Edge"><option>\t Alpha \n</option><option>&nbsp;Bravo&nbsp;</option><option>&#65279;Charlie</option><option>Keep<script>x</script></option></select>`;
+    const edges = await scanOwner(page(markup));
+    const native = Array.from(new DOMParser().parseFromString(markup, "text/html").querySelectorAll("option")).map((o) => o.value);
+    expect(edges.capabilities[0].fields.find((f) => f.name === "edge")?.options).toEqual(native);
+    expect(native).toEqual(["Alpha", "\u00A0Bravo\u00A0", "\uFEFFCharlie", "Keep"]);
     const proposal = await inferGenericCapabilities(scan);
     const doc = new DOMParser().parseFromString(html, "text/html");
     const [tool] = createGenericToolDefinitions({ hostDocument: doc, scan, proposal, modelContext: undefined });
@@ -609,5 +614,22 @@ describe("R98: a select offers only what the browser would submit", () => {
     const long = "Z".repeat(201);
     const scan = await scanOwner(page(`<select name="mode" aria-label="Mode"><option selected>Delete my account ${long}</option><option>${long}</option></select>`));
     expect(scan.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+  });
+});
+
+describe("R99: the page's default is its first enabled option", () => {
+  it("makes a destructive option behind a disabled placeholder the withheld default, or the action", async () => {
+    const page = (select: string) => `<form method="post" action="/x"><input name="n" aria-label="Name">${select}<button>Send message</button></form>`;
+    const shifted = await scanOwner(
+      page(`<select name="reason" aria-label="Reason"><option value="" disabled>Choose</option><option value="d">Delete my account</option><option value="q">Question</option></select>`),
+    );
+    const reason = shifted.capabilities[0].fields.find((f) => f.name === "reason")!;
+    expect([reason.options, reason.required, reason.withheldDefault]).toEqual([["q"], true, true]);
+    const bare = await scanOwner(page(`<select name="reason" aria-label="Reason"><option value="" disabled>Choose</option><option>Delete my account ${"Z".repeat(201)}</option></select>`));
+    expect(bare.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const duplicate = await scanOwner(
+      page(`<select name="mode" aria-label="Mode"><option value="k" disabled>Keep (old)</option><option value="k">Keep</option><option value="a">Archive</option></select>`),
+    );
+    expect(duplicate.capabilities[0].fields.find((f) => f.name === "mode")?.options).toEqual(["a"]);
   });
 });
