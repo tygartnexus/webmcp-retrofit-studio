@@ -1,18 +1,14 @@
 import type { HtmlSnapshot } from "../fixtures/genericFixtures";
 import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
-import { formControls } from "./formOwner";
-import { accessibleContent, clipLabel, text, visibleText } from "./scanText";
+import { formControls, isDisabledControl, ownedControls } from "./formOwner";
+import { classifyForm } from "./scanClassify";
+import { accessibleContent, clipLabel, renderedText, text, visibleText } from "./scanText";
 import {
-  CREDENTIAL_ACTION_PATTERN,
-  FINALIZE_PATTERN,
   NAVIGATION_PATTERN,
-  NEUTRAL_ACTION_PATTERN,
   NEXT_PATTERN,
   PAYMENT_NAME_PATTERN,
   PREVIOUS_PATTERN,
-  READ_ACTION_PATTERN,
-  SEARCH_PATTERN,
 } from "./scanVocabulary";
 import { deepFreeze } from "../lib/deepFreeze";
 
@@ -61,6 +57,8 @@ export interface FieldObservation {
 
 export interface ButtonObservation {
   label: string;
+  /** Every name the button carries; risk is judged against all of them. */
+  riskLabels: readonly string[];
   type: string;
   selector: string;
   /** A submit button's own target, when it overrides the form's. */
@@ -401,22 +399,31 @@ function referencedName(button: Element): string | undefined {
   return name || undefined;
 }
 
+interface ButtonNames {
+  label: string;
+  riskLabels: string[];
+}
+
 /**
- * Accessible-name order: aria-labelledby, then aria-label, then content as
- * assistive technology reads it (text with image alt in place, or an input's
- * value or alt), then title, then a generic word when nothing names the control.
+ * The label follows accessible-name order: aria-labelledby, then aria-label,
+ * then content as assistive technology reads it (text with image alt in
+ * place, or an input's value or alt), then title, then a generic word. The
+ * risk labels are every name the button carries, including its rendered
+ * text with aria-hidden spans, so an ARIA override cannot hide a finalizing
+ * verb from classification.
  */
-function buttonLabel(button: Element, type: string): string {
+function buttonNames(button: Element, type: string): ButtonNames {
   const ariaLabel = button.getAttribute("aria-label")?.trim();
   const title = button.getAttribute("title")?.trim();
   const fallback = type === "button" ? "Button" : "Submit";
-  const content =
-    button.tagName !== "INPUT"
-      ? accessibleContent(button)
-      : type === "image"
-        ? button.getAttribute("alt")?.trim()
-        : button.getAttribute("value")?.trim();
-  return clipTo(referencedName(button) || ariaLabel || content || title || fallback, LABEL_BUDGET);
+  const isInput = button.tagName === "INPUT";
+  const content = isInput
+    ? (type === "image" ? button.getAttribute("alt") : button.getAttribute("value"))?.trim()
+    : accessibleContent(button);
+  const label = clipTo(referencedName(button) || ariaLabel || content || title || fallback, LABEL_BUDGET);
+  const rendered = isInput ? "" : renderedText(button);
+  const names = [label, ariaLabel, content, rendered].filter((name): name is string => Boolean(name));
+  return { label, riskLabels: [...new Set(names.map((name) => clipTo(name, LABEL_BUDGET)))] };
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
@@ -426,7 +433,7 @@ function observeButtons(form: Element, document: Document): ButtonObservation[] 
     const formAction = isSubmitType(type) ? button.getAttribute("formaction")?.trim() : undefined;
     const formMethod = isSubmitType(type) ? button.getAttribute("formmethod")?.toLowerCase() : undefined;
     return {
-      label: buttonLabel(button, type),
+      ...buttonNames(button, type),
       type,
       selector: selectorFor(button, document),
       ...(formAction ? { formAction } : {}),
@@ -435,28 +442,6 @@ function observeButtons(form: Element, document: Document): ButtonObservation[] 
   });
 }
 
-function classifyForm(
-  method: "get" | "post",
-  actionLabel: string,
-  form: Element,
-  fields: readonly FieldObservation[],
-): { kind: CapabilityKind; riskClass: RiskClass } {
-  const hasCredential = fields.some((field) => field.excluded === "credential");
-  const hasPayment = fields.some((field) => field.excluded === "payment-credential");
-  const roleSearch = form.getAttribute("role") === "search";
-  const hasSearchInput = fields.some((field) => field.inputType === "search");
-  const labels = [actionLabel, ...fields.map((field) => field.label ?? "")].join(" ");
-  const neutral = NEUTRAL_ACTION_PATTERN.test(actionLabel.trim());
-  if (hasCredential || (!neutral && CREDENTIAL_ACTION_PATTERN.test(actionLabel))) {
-    return { kind: "form", riskClass: "credential" };
-  }
-  if (hasPayment || (!neutral && FINALIZE_PATTERN.test(actionLabel))) return { kind: "form", riskClass: "finalize" };
-  const readSignal =
-    neutral || roleSearch || hasSearchInput || SEARCH_PATTERN.test(labels) || READ_ACTION_PATTERN.test(actionLabel.trim());
-  if (method === "get" && readSignal) return { kind: "search", riskClass: "read" };
-  // A GET form with no read signal is still an action; stage it rather than assume it is safe.
-  return { kind: "form", riskClass: "write" };
-}
 
 /**
  * A compound legacy form can carry several capabilities: the submit action,
@@ -500,7 +485,7 @@ function buttonCapability(
   fields: readonly FieldObservation[],
 ): CapabilityObservation {
   const effectiveMethod = button.formMethod ?? method;
-  const { kind, riskClass } = classifyForm(effectiveMethod, button.label, form, fields);
+  const { kind, riskClass } = classifyForm(effectiveMethod, button.label, form, fields, button.riskLabels);
   return {
     id: `action:${button.selector}`,
     kind,
@@ -565,22 +550,51 @@ function fieldSearch(searchFields: readonly FieldObservation[], selector: string
   };
 }
 
+interface PrimaryAction {
+  submit?: ButtonObservation;
+  actionLabel: string;
+  riskLabels: readonly string[];
+  /** The form's default button is disabled, so Enter submits nothing. */
+  implicitBlocked: boolean;
+}
+
+function submitTypeOf(control: Element): string {
+  return (control.getAttribute("type") ?? "submit").toLowerCase();
+}
+
+/**
+ * The form's default button is its first submit-type control, disabled or not. A
+ * disabled default button blocks implicit submission yet still names the action, so a
+ * disabled "Delete account" is listed as excluded rather than replaced by a phantom
+ * "Submit"; a plain button never stands in for the primary action.
+ */
+function primaryAction(form: Element, buttons: readonly ButtonObservation[], document: Document): PrimaryAction {
+  const defaultButton = ownedControls(form, document).find(
+    (control) => control.matches(BUTTON_SELECTOR) && isSubmitType(submitTypeOf(control)),
+  );
+  if (defaultButton && isDisabledControl(defaultButton)) {
+    const names = buttonNames(defaultButton, submitTypeOf(defaultButton));
+    return { actionLabel: names.label, riskLabels: names.riskLabels, implicitBlocked: true };
+  }
+  const submit = buttons.find((button) => isSubmitType(button.type));
+  return { submit, actionLabel: submit?.label ?? "Submit", riskLabels: submit?.riskLabels ?? ["Submit"], implicitBlocked: false };
+}
+
 function observeForm(form: Element, document: Document): FormObservation {
   const selector = selectorFor(form, document);
   const rowLabel = rowLabelFor(form);
   const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
   const heading = nearestHeading(form, document);
   const buttons = observeButtons(form, document);
-  // The primary action is the first submitting control; a plain button never stands in for it.
-  const submit = buttons.find((button) => isSubmitType(button.type));
-  const actionLabel = submit?.label ?? "Submit";
+  const { submit, actionLabel, riskLabels, implicitBlocked } = primaryAction(form, buttons, document);
   const primaryMethod = submit?.formMethod ?? method;
   const controls = formControls(form, document);
   const fields = observeFields(controls, form, selector, document);
-  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
+  const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields, riskLabels);
   // An excluded form is still listed without a submission path, so the owner sees why nothing was proposed.
   const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
-  const hasPrimary = submit !== undefined || implicitSubmitters(controls).length === 1 || primaryIsExcluded;
+  const implicit = !implicitBlocked && implicitSubmitters(controls).length === 1;
+  const hasPrimary = submit !== undefined || implicit || primaryIsExcluded;
   const base = { heading, rowLabel };
   const plain = buttons.filter((candidate) => candidate.type === "button");
   const buttonExtras = [

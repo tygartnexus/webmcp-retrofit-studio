@@ -12,30 +12,52 @@
 export const ROW_LABEL_BUDGET = 60;
 const NON_VISIBLE_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT", "TEXTAREA", "SELECT", "OPTION"]);
 /** Classes that remove an element from rendering; inline styles are checked separately. */
-const DISPLAY_NONE_CLASS_PATTERN = /(^|\s)(hidden|d-none|is-hidden)(\s|$)/i;
+const DISPLAY_NONE_CLASS_PATTERN = /(^|\s)(hidden|d-none|is-hidden)(\s|$)/;
 /** Classes that clip an element off screen while assistive technology still reads it. */
-const SCREEN_READER_CLASS_PATTERN = /(^|\s)(sr-only|visually-hidden|visuallyhidden|screen-reader-text)(\s|$)/i;
+const SCREEN_READER_CLASS_PATTERN = /(^|\s)(sr-only|visually-hidden|visuallyhidden|screen-reader-text)(\s|$)/;
+/** Zero-width characters render as nothing and must not survive into names. */
+const ZERO_WIDTH_PATTERN = /[\u200B-\u200D\uFEFF]/g;
 /** Elements that start on their own line, so their edges separate words. */
 const BLOCK_TAGS = new Set([
   "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "BR", "DD", "DETAILS", "DIV", "DL", "DT", "FIELDSET", "FIGCAPTION",
   "FIGURE", "FOOTER", "FORM", "H1", "H2", "H3", "H4", "H5", "H6", "HEADER", "HR", "LEGEND", "LI", "MAIN", "NAV", "OL",
   "P", "PRE", "SECTION", "SUMMARY", "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "UL",
 ]);
-const BLOCK_STYLE_PATTERN = /display:(block|flex|grid|table|list-item)/;
+const BLOCK_DISPLAYS = new Set(["block", "flex", "grid", "table", "list-item"]);
 
-type Audience = "sighted" | "assistive" | "referenced";
+/**
+ * Who the text is for: sighted readers, assistive technology, everyone the
+ * page renders it to (either of those), or an element referenced by
+ * aria-labelledby, which contributes even when hidden.
+ */
+type Audience = "sighted" | "assistive" | "rendered" | "referenced";
 
-function inlineStyle(element: Element): string {
-  return (element.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
+/** Inline declarations by property, so "display:none" inside another property's name or value does not count. */
+function inlineDeclarations(element: Element): Map<string, string> {
+  const declarations = new Map<string, string>();
+  for (const declaration of (element.getAttribute("style") ?? "").toLowerCase().split(";")) {
+    const separator = declaration.indexOf(":");
+    if (separator > 0) declarations.set(declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim());
+  }
+  return declarations;
 }
 
-/** Excluded from both visible text and accessible names: hidden markup and control content. */
-function isExcludedContent(element: Element): boolean {
-  if (NON_VISIBLE_TAGS.has(element.tagName)) return true;
-  if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return true;
+function isHiddenByStyle(element: Element): boolean {
+  const style = inlineDeclarations(element);
+  const visibility = style.get("visibility");
+  return style.get("display") === "none" || visibility === "hidden" || visibility === "collapse";
+}
+
+/** Rendered to nobody: hidden markup and control content. */
+function isUnrendered(element: Element): boolean {
+  if (NON_VISIBLE_TAGS.has(element.tagName) || element.hasAttribute("hidden")) return true;
   if (DISPLAY_NONE_CLASS_PATTERN.test(element.getAttribute("class") ?? "")) return true;
-  const style = inlineStyle(element);
-  return style.includes("display:none") || style.includes("visibility:hidden");
+  return isHiddenByStyle(element);
+}
+
+/** Excluded from both visible text and accessible names. */
+function isExcludedContent(element: Element): boolean {
+  return isUnrendered(element) || element.getAttribute("aria-hidden") === "true";
 }
 
 export function isHiddenElement(element: Element): boolean {
@@ -43,12 +65,20 @@ export function isHiddenElement(element: Element): boolean {
 }
 
 function isBlock(element: Element): boolean {
-  return BLOCK_TAGS.has(element.tagName) || BLOCK_STYLE_PATTERN.test(inlineStyle(element));
+  return BLOCK_TAGS.has(element.tagName) || BLOCK_DISPLAYS.has(inlineDeclarations(element).get("display") ?? "");
 }
 
 function isExcludedFor(element: Element, audience: Audience): boolean {
-  if (audience === "referenced") return NON_VISIBLE_TAGS.has(element.tagName);
-  return audience === "sighted" ? isHiddenElement(element) : isExcludedContent(element);
+  switch (audience) {
+    case "referenced":
+      return NON_VISIBLE_TAGS.has(element.tagName);
+    case "rendered":
+      return isUnrendered(element);
+    case "assistive":
+      return isExcludedContent(element);
+    default:
+      return isHiddenElement(element);
+  }
 }
 
 /** Raw text with rendering-shaped whitespace; callers collapse it. */
@@ -63,7 +93,7 @@ function rawText(node: Node, audience: Audience): string {
 }
 
 function collapse(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return value.replace(ZERO_WIDTH_PATTERN, "").replace(/\s+/g, " ").trim();
 }
 
 /** Text a person can see: skips hidden elements and control values entirely. */
@@ -79,6 +109,11 @@ export function visibleText(node: Node): string {
  */
 export function accessibleContent(node: Node, referenced = false): string {
   return collapse(rawText(node, referenced ? "referenced" : "assistive"));
+}
+
+/** Everything the page renders to anyone: aria-hidden and screen-reader-only text both count. */
+export function renderedText(node: Node): string {
+  return collapse(rawText(node, "rendered"));
 }
 
 export function clipLabel(value: string): string {

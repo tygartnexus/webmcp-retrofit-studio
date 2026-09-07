@@ -255,11 +255,10 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>, tabl
   if (capability.kind === "search") {
     const noun = objectNoun(capability);
     const fromButton = capability.id.startsWith("action:");
-    // The button names the search; the suffix only helps when the noun is not already that label.
-    const viaButton =
-      fromButton && noun.toLowerCase() !== capability.actionLabel.trim().toLowerCase()
-        ? ` (${truncate(capability.actionLabel, VIA_BUTTON_BUDGET)})`
-        : "";
+    const label = capability.actionLabel.trim().toLowerCase();
+    // The button names the search; the suffix only helps when the title does not already say the label.
+    const redundant = [noun, `Search ${noun}`].some((candidate) => candidate.toLowerCase() === label);
+    const viaButton = fromButton && !redundant ? ` (${truncate(capability.actionLabel, VIA_BUTTON_BUDGET)})` : "";
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
       title: titled(`Search ${noun}`, viaButton),
@@ -293,10 +292,24 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>, tabl
   };
 }
 
+/**
+ * Two actions with the same label (two "Preview" buttons, two GET submits
+ * named alike) keep distinct names through uniqueName; their titles get the
+ * same ordinal, so an agent reading titles can tell them apart too.
+ */
+function withDistinctTitles(tools: readonly ProposedTool[]): ProposedTool[] {
+  const seen = new Map<string, number>();
+  return tools.map((tool) => {
+    const count = (seen.get(tool.title) ?? 0) + 1;
+    seen.set(tool.title, count);
+    return count === 1 ? tool : { ...tool, title: titled(tool.title, ` (${count})`) };
+  });
+}
+
 export async function inferGenericCapabilities(scan: GenericScanResult): Promise<GenericProposal> {
   const taken = new Set<string>();
   const tableStems = new Map<string, number>();
-  const tools: ProposedTool[] = [];
+  const proposed: ProposedTool[] = [];
   const excluded: ExcludedCapability[] = [];
   for (const capability of scan.capabilities) {
     if (capability.riskClass === "finalize" || capability.riskClass === "credential") {
@@ -308,8 +321,9 @@ export async function inferGenericCapabilities(scan: GenericScanResult): Promise
       });
       continue;
     }
-    tools.push(proposeTool(capability, taken, tableStems));
+    proposed.push(proposeTool(capability, taken, tableStems));
   }
+  const tools = withDistinctTitles(proposed);
   const humanConfirmationBoundary = "outside-tool-surface" as const;
   const versionHash = await sha256Hex(
     canonicalJson({ inferenceVersion: INFERENCE_VERSION, tools, excluded, humanConfirmationBoundary }),

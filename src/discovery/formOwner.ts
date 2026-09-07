@@ -33,13 +33,12 @@ export function isDisabledControl(control: Element): boolean {
   return false;
 }
 
-/**
- * Enabled controls a form owns, in document order. Image buttons are
- * included even though form.elements omits them; disabled controls are
- * left out entirely, so they are never parameters, actions, or blockers.
- */
+/** Every control a form owns, disabled or not, in document order. Image buttons are included even though form.elements omits them. */
+export function ownedControls(form: Element, document: Document): Element[] {
+  return [...document.querySelectorAll(CONTROL_SELECTOR)].filter((control) => formOwner(control) === form);
+}
+
+/** The enabled controls a form owns; disabled ones are never parameters or actions. */
 export function formControls(form: Element, document: Document): Element[] {
-  return [...document.querySelectorAll(CONTROL_SELECTOR)].filter(
-    (control) => formOwner(control) === form && !isDisabledControl(control),
-  );
+  return ownedControls(form, document).filter((control) => !isDisabledControl(control));
 }

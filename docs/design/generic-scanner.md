@@ -113,9 +113,15 @@ studio runtime, and the embed all resolve ownership this way
 (`src/discovery/formOwner.ts`), so a control counts for exactly one form
 and a button outside its form still stages against that form. Disabled
 controls, and controls inside a disabled fieldset outside its first legend,
-are not among a form's controls at all: never parameters, actions, blockers
-of implicit submission, or envelope counts, while a nameless enabled
-Enter-submitting input still blocks it.
+are never parameters, actions, or envelope counts, and a nameless enabled
+Enter-submitting input still blocks implicit submission. The form's default
+button is its first submit-type control, disabled or not: when it is
+disabled, Enter submits nothing, so no default action is proposed, while a
+disabled credential or finalize default is still listed as excluded. Risk
+is judged against every name a button carries (the accessible name, its
+aria-label, its content, and its rendered text including aria-hidden and
+screen-reader-only spans), so an ARIA override cannot turn a visible
+"Delete account" into a write tool.
 Skipped navigation buttons are counted from the controls each form owns.
 When a search field has its own read tool, or a GET submit button already
 offers one, the form's write tool does not carry the search field, and no
@@ -135,7 +141,8 @@ description, or the export. Hidden means the hidden attribute, aria-hidden,
 inline display:none or visibility:hidden, display-none classes (hidden,
 d-none, is-hidden), and script, style, template, textarea, and select
 content; screen-reader-only classes (sr-only, visually-hidden,
-screen-reader-text) hide text from sight only. Text joins the way it
+screen-reader-text) hide text from sight only. Class names match
+case-sensitively, as CSS does, and zero-width characters are dropped. Text joins the way it
 renders: inline edges keep their whitespace and block elements and line
 breaks separate words, so "Delete&lt;br&gt;account" reads as "Delete account".
 Stylesheets are not evaluated, so text hidden only by an external rule under
@@ -199,7 +206,7 @@ including search and table descriptions built from a heading, is clipped to
 the lint budget. Read-only names never carry write words, whatever the
 page heading said ("Orders to cancel" reads as `read_orders_to`). A search
 tool whose only label is the word "Search" is named after its heading, and a
-search derived from a submit button names that button in its title (unless the noun already is that label) and
+search derived from a submit button names that button in its title (unless the title already says that label), and tools whose titles would still coincide carry an ordinal and
 description so it never reads like the form's own search. A label with no Latin
 letters gets a deterministic stem from a short hash of the label
 (`write_1a2b3c`, `search_…`, `read_…`); the original-script label stays in

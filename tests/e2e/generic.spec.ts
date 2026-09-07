@@ -35,7 +35,10 @@ test("generic flow: scan a contact form, approve, call the tool, stage, validate
   await page.goto("/");
   await scanGeneric(page, "synthetic-contact-form-v1");
 
-  await expect(page.getByRole("region", { name: /Proposed tools \(1\)/ })).toContainText("send_message");
+  const proposed = page.getByRole("region", { name: /Proposed tools \(1\)/ });
+  await expect(proposed).toContainText("send_message");
+  // toContainText reads hidden nodes too; the card must actually render at every viewport.
+  await expect(proposed.locator(".generic-tool-card")).toBeVisible();
   await noHorizontalOverflow(page);
   await page.getByRole("button", { name: "Approve for runtime" }).click();
 

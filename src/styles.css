@@ -1959,7 +1959,8 @@ code,
     display: none;
   }
 
-  .candidate-card:not(.is-selected) {
+  /* The booking workbench collapses to the selected candidate; generic tool cards are never selected and stay visible. */
+  .candidate-card:not(.is-selected):not(.generic-tool-card) {
     display: none;
   }
 
