@@ -111,9 +111,11 @@ owner, a form attribute naming nothing leaves the control with no form,
 and otherwise the enclosing form owns it. The scanner, the checks, the
 studio runtime, and the embed all resolve ownership this way
 (`src/discovery/formOwner.ts`), so a control counts for exactly one form
-and a button outside its form still stages against that form. A disabled
-control never submits, so it neither blocks nor enables implicit
-submission, while a nameless Enter-submitting input still blocks it.
+and a button outside its form still stages against that form. Disabled
+controls, and controls inside a disabled fieldset outside its first legend,
+are not among a form's controls at all: never parameters, actions, blockers
+of implicit submission, or envelope counts, while a nameless enabled
+Enter-submitting input still blocks it.
 Skipped navigation buttons are counted from the controls each form owns.
 When a search field has its own read tool, or a GET submit button already
 offers one, the form's write tool does not carry the search field, and no
@@ -126,11 +128,16 @@ search fields. Excluded controls are counted once per form even when
 several capabilities share the form's fields. A form inside a table row or a repeated container carries a row
 label taken from visible text only, clipped to 60 characters: the first
 non-form cell, or the block's heading outside the form, or its first visible
-text. The same visible-text rule applies to headings, button labels, labels, and
-legends, so hidden text never reaches a tool name, description, or the
-export. Hidden means the hidden attribute, aria-hidden, inline display:none
-or visibility:hidden, common hiding classes (sr-only, visually-hidden,
-hidden, d-none), and script, style, template, textarea, and select content.
+text. The same visible-text rule applies to headings, labels, and legends; button
+names use the accessible-name rule above, so screen-reader-only text reaches
+a button name while display-none text never reaches a tool name,
+description, or the export. Hidden means the hidden attribute, aria-hidden,
+inline display:none or visibility:hidden, display-none classes (hidden,
+d-none, is-hidden), and script, style, template, textarea, and select
+content; screen-reader-only classes (sr-only, visually-hidden,
+screen-reader-text) hide text from sight only. Text joins the way it
+renders: inline edges keep their whitespace and block elements and line
+breaks separate words, so "Delete&lt;br&gt;account" reads as "Delete account".
 Stylesheets are not evaluated, so text hidden only by an external rule under
 another class name is still visible to the scan; owners should check names
 and labels in the proposal.
@@ -192,7 +199,7 @@ including search and table descriptions built from a heading, is clipped to
 the lint budget. Read-only names never carry write words, whatever the
 page heading said ("Orders to cancel" reads as `read_orders_to`). A search
 tool whose only label is the word "Search" is named after its heading, and a
-search derived from a submit button names that button in its title and
+search derived from a submit button names that button in its title (unless the noun already is that label) and
 description so it never reads like the form's own search. A label with no Latin
 letters gets a deterministic stem from a short hash of the label
 (`write_1a2b3c`, `search_…`, `read_…`); the original-script label stays in

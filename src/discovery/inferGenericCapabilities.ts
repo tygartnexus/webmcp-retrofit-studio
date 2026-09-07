@@ -254,12 +254,17 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>, tabl
   }
   if (capability.kind === "search") {
     const noun = objectNoun(capability);
-    const viaButton = capability.id.startsWith("action:") ? ` (${truncate(capability.actionLabel, VIA_BUTTON_BUDGET)})` : "";
+    const fromButton = capability.id.startsWith("action:");
+    // The button names the search; the suffix only helps when the noun is not already that label.
+    const viaButton =
+      fromButton && noun.toLowerCase() !== capability.actionLabel.trim().toLowerCase()
+        ? ` (${truncate(capability.actionLabel, VIA_BUTTON_BUDGET)})`
+        : "";
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
       title: titled(`Search ${noun}`, viaButton),
       description: truncate(
-        `Search ${noun} using the ${capability.heading} form${viaButton ? ` through its "${capability.actionLabel}" button` : ""}. This tool does not modify state.`,
+        `Search ${noun} using the ${capability.heading} form${fromButton ? ` through its "${capability.actionLabel}" button` : ""}. This tool does not modify state.`,
         DESCRIPTION_BUDGET,
       ),
       inputSchema: schemaFromFields(capability.fields),

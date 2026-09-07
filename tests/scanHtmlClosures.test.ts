@@ -373,7 +373,7 @@ describe("R33: a button-derived search names its button in the title", () => {
     const html = `<h1>Orders</h1><form id="o" method="post" action="/save"><label for="q">Orders</label><input id="q" name="q" type="search"><button>Save</button><button type="submit" formmethod="get" formaction="/find">Orders</button></form>`;
     const proposal = await inferGenericCapabilities(await scanOwner(html));
     const searches = proposal.tools.filter((t) => t.riskClass === "read").map((t) => [t.name, t.title]);
-    expect(searches).toEqual([["search_orders", "Search Orders (Orders)"]]);
+    expect(searches).toEqual([["search_orders", "Search Orders"]]);
     expect(proposal.tools[1].description).toContain(`through its "Orders" button`);
   });
 });
@@ -637,7 +637,7 @@ describe("R50: a control belongs to exactly the form its form attribute names", 
 
 describe("R51: a long button suffix cannot push a title past the budget", () => {
   it("keeps every title within 120 characters and the suffix present", async () => {
-    const label = "Regional office archive locator across every branch and satellite site worldwide extended lookup network directory service";
+    const label = "Show the regional office archive locator across every branch and satellite site worldwide extended lookup network directory service";
     const html = `<form id="f" method="get" action="/x"><input name="q" type="search" aria-label="Term"><button>Find</button><button type="submit" aria-label="${label}">Go</button></form>`;
     const proposal = await inferGenericCapabilities(await scanOwner(html));
     expect(proposal.tools).toHaveLength(2);
@@ -673,5 +673,89 @@ describe("R53: a GET submit button owns the form's search", () => {
     const read = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined }).find((t) => t.name === reads[0].name)!;
     const output = read.execute({ q: "x" }, { signal: new AbortController().signal }) as { request: { action: string } };
     expect(output.request.action).toBe("/find");
+  });
+});
+
+describe("R54: inline edges keep their whitespace", () => {
+  it("reads a finalize action split across inline elements", async () => {
+    for (const markup of ["Delete<span> account</span>", "<span>Delete </span>account", "<span>Delete </span><span>account</span>"]) {
+      const scan = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button>${markup}</button></form>`);
+      expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    }
+  });
+
+  it("keeps heading and label words apart", async () => {
+    const scan = await scanOwner(
+      `<h2>Open<span> orders</span></h2><form method="post" action="/x"><label>First<span> name</span> <input name="fn"></label><button>Save</button></form>`,
+    );
+    expect(scan.capabilities[0].heading).toBe("Open orders");
+    expect(scan.capabilities[0].fields[0].label).toBe("First name");
+  });
+});
+
+describe("R55: block children and line breaks separate words", () => {
+  it("reads a finalize action broken across lines or blocks", async () => {
+    const cases: [string, string][] = [
+      ["Place<br>order", "Place order"],
+      ["<p>Delete</p><p>account</p>", "Delete account"],
+      ["<div>Delete</div><div>account</div>", "Delete account"],
+      [`<span style="display: block">Delete</span>account`, "Delete account"],
+    ];
+    for (const [markup, label] of cases) {
+      const scan = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button>${markup}</button></form>`);
+      expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([[label, "finalize"]]);
+    }
+  });
+
+  it("spaces a heading broken by a line break", async () => {
+    const proposal = await inferGenericCapabilities(
+      await scanOwner(`<h2>Orders<br>2026</h2><table><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`),
+    );
+    expect(proposal.tools[0].title).toBe("Read Orders 2026");
+  });
+});
+
+describe("R56: display-none classes hide from names, screen-reader classes do not", () => {
+  it("drops a display-none span from a button name and keeps a screen-reader span", async () => {
+    const page = (button: string) => `<form method="post" action="/x"><input name="a" aria-label="A"><button>${button}</button></form>`;
+    const verb = await scanOwner(page(`Remove<span class="d-none"> filter</span>`));
+    expect(verb.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Remove", "finalize"]]);
+    const leak = await scanOwner(page(`Save<span class="hidden"> ref-991-secret</span>`));
+    expect(leak.capabilities[0].actionLabel).toBe("Save");
+    const nested = await scanOwner(page(`Save<span class="is-hidden"><span> ref-991-secret</span></span>`));
+    expect(nested.capabilities[0].actionLabel).toBe("Save");
+    const reader = await scanOwner(page(`Save<span class="visually-hidden"> draft</span>`));
+    expect(reader.capabilities[0].actionLabel).toBe("Save draft");
+  });
+});
+
+describe("R57: disabled controls are off the tool surface", () => {
+  it("omits disabled fields and buttons and disabled-fieldset descendants outside the legend", async () => {
+    const html = `<form id="f" method="post" action="/x"><input name="a" aria-label="A"><input name="locked" disabled aria-label="Locked"><fieldset disabled><legend>Extras <input name="inLegend" aria-label="In legend"></legend><input name="inner" aria-label="Inner"></fieldset><button>Save</button><button type="submit" disabled formaction="/later">Save later</button><button type="button" disabled>Review</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.fields.map((f) => f.name)])).toEqual([["Save", ["a", "inLegend"]]]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => [t.name, Object.keys(t.inputSchema.properties)])).toEqual([["save", ["a", "inLegend"]]]);
+  });
+
+  it("ignores a disabled password when classifying and counting", async () => {
+    const scan = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><input type="password" name="pw" disabled><button>Save</button></form>`);
+    expect(scan.capabilities.map((c) => c.riskClass)).toEqual(["write"]);
+    expect(scan.safety.credentialFieldsExcluded).toBe(0);
+  });
+
+  it("proposes nothing for a form whose only submit is disabled", async () => {
+    const scan = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><input name="b" aria-label="B"><button disabled>Save</button></form>`);
+    expect(scan.capabilities).toEqual([]);
+  });
+});
+
+describe("R58: a button-derived search does not repeat its own label", () => {
+  it("drops the suffix when the noun already is the button label", async () => {
+    const html = `<form id="e" method="post" action="/save"><input name="q" type="search" aria-label="Query"><button>Save</button><button type="submit" formmethod="get" formaction="/export">Export</button></form>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(html));
+    const [read] = proposal.tools.filter((t) => t.riskClass === "read");
+    expect([read.name, read.title]).toEqual(["search_export", "Search Export"]);
+    expect(read.description).toContain(`through its "Export" button`);
   });
 });

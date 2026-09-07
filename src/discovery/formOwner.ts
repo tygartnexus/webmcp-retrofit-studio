@@ -18,7 +18,28 @@ export function formOwner(control: Element): Element | null {
   return control.closest("form");
 }
 
-/** Controls a form owns, in document order. Image buttons are included even though form.elements omits them. */
+/**
+ * A disabled control is neither submitted nor activatable. A disabled
+ * fieldset disables its descendants except those inside its first legend.
+ */
+export function isDisabledControl(control: Element): boolean {
+  if (control.hasAttribute("disabled")) return true;
+  let fieldset = control.parentElement?.closest("fieldset[disabled]") ?? null;
+  while (fieldset) {
+    const legend = [...fieldset.children].find((child) => child.tagName === "LEGEND");
+    if (!legend?.contains(control)) return true;
+    fieldset = fieldset.parentElement?.closest("fieldset[disabled]") ?? null;
+  }
+  return false;
+}
+
+/**
+ * Enabled controls a form owns, in document order. Image buttons are
+ * included even though form.elements omits them; disabled controls are
+ * left out entirely, so they are never parameters, actions, or blockers.
+ */
 export function formControls(form: Element, document: Document): Element[] {
-  return [...document.querySelectorAll(CONTROL_SELECTOR)].filter((control) => formOwner(control) === form);
+  return [...document.querySelectorAll(CONTROL_SELECTOR)].filter(
+    (control) => formOwner(control) === form && !isDisabledControl(control),
+  );
 }

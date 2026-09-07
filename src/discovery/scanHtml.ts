@@ -540,15 +540,13 @@ function observeFields(controls: readonly Element[], form: Element, selector: st
 
 /**
  * Without a submitting control a form only submits implicitly, and only with a single
- * Enter-submitting input, nameless ones included. A disabled control never submits, so it
- * neither blocks nor enables that path.
+ * Enter-submitting input, nameless ones included. Disabled controls are already absent
+ * from a form's controls, so they neither block nor enable that path.
  */
 function implicitSubmitters(controls: readonly Element[]): Element[] {
   return controls.filter(
     (control) =>
-      control.tagName === "INPUT" &&
-      !control.hasAttribute("disabled") &&
-      IMPLICIT_SUBMIT_TYPES.has((control.getAttribute("type") ?? "text").toLowerCase()),
+      control.tagName === "INPUT" && IMPLICIT_SUBMIT_TYPES.has((control.getAttribute("type") ?? "text").toLowerCase()),
   );
 }
 
