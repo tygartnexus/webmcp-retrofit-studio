@@ -179,7 +179,7 @@ function structuralSelector(element: Element, document: Document): string {
       return steps.join(" > ");
     }
     const parent: Element | null = current.parentElement;
-    const tag = current.tagName.toLowerCase();
+    const tag = CSS.escape(current.tagName.toLowerCase());
     const sameTag = parent ? [...parent.children].filter((child) => child.tagName === current!.tagName) : [current];
     steps.unshift(sameTag.length === 1 ? tag : `${tag}:nth-of-type(${sameTag.indexOf(current) + 1})`);
     current = parent;
@@ -262,17 +262,34 @@ function numberAttribute(control: Element, attribute: string): number | undefine
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/**
+ * A control's selector must resolve to exactly the controls it stands for: a
+ * unique id, else a name attribute shared only by its group (radio or
+ * checkbox), else a structural path. A nameless control never gets a name
+ * selector built from its id.
+ */
+function controlSelector(control: Element, formSelector: string, inputType: string, document: Document): string {
+  const id = uniqueId(control, document);
+  if (id) return `#${id}`;
+  const nameAttribute = control.getAttribute("name");
+  if (nameAttribute) {
+    const sharing = control.closest("form")?.querySelectorAll(attributeSelector("", "name", nameAttribute).trim()).length ?? 1;
+    const grouped = inputType === "radio" || inputType === "checkbox";
+    if (sharing === 1 || grouped) return attributeSelector(formSelector, "name", nameAttribute);
+  }
+  return structuralSelector(control, document);
+}
+
 function observeField(control: Element, form: Element, formSelector: string, document: Document): FieldObservation | null {
   const name = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
   if (!name) return null;
   const inputType = (control.getAttribute("type") ?? (control.tagName === "SELECT" ? "select" : "text")).toLowerCase();
   if (inputType === "submit" || inputType === "button" || inputType === "reset" || inputType === "image") return null;
   const excluded = exclusionFor(control, inputType, name);
-  const controlId = uniqueId(control, document);
   const field: FieldObservation = {
     id: `${formSelector}:field:${name}`,
     name,
-    selector: controlId ? `#${controlId}` : attributeSelector(formSelector, "name", name),
+    selector: controlSelector(control, formSelector, inputType, document),
     inputType,
     kind: fieldKind(control, inputType),
     required: control.hasAttribute("required"),
@@ -316,6 +333,24 @@ function observeRadio(control: Element, field: FieldObservation): FieldObservati
     ...(legend ? { label: legend } : {}),
     options: value ? [value] : [],
   };
+}
+
+/**
+ * Two fields in one form can end up with the same name: nameless inputs that
+ * share a duplicated id, or repeated text inputs with one name. The second
+ * and later ones get a numeric suffix so schema keys and field ids stay
+ * distinct; their selectors already point at their own control.
+ */
+function dedupeFieldNames(fields: readonly FieldObservation[], formSelector: string): FieldObservation[] {
+  const seen = new Map<string, number>();
+  return fields.map((field) => {
+    const grouped = field.inputType === "radio" || field.inputType === "checkbox";
+    const count = (seen.get(field.name) ?? 0) + 1;
+    seen.set(field.name, count);
+    if (count === 1 || grouped) return field;
+    const name = `${field.name}_${count}`;
+    return { ...field, name, id: `${formSelector}:field:${name}` };
+  });
 }
 
 /** Same-name radios collapse into one enum field; required if any option is. */
@@ -389,10 +424,13 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   const buttons = observeButtons(form, document);
   const submit = buttons.find((button) => button.type === "submit") ?? buttons[0];
   const actionLabel = submit?.label ?? "Submit";
-  const fields = collapseRadioGroups(
-    [...form.querySelectorAll("input, select, textarea")]
-      .map((control) => observeField(control, form, selector, document))
-      .filter((field): field is FieldObservation => field !== null),
+  const fields = dedupeFieldNames(
+    collapseRadioGroups(
+      [...form.querySelectorAll("input, select, textarea")]
+        .map((control) => observeField(control, form, selector, document))
+        .filter((field): field is FieldObservation => field !== null),
+      selector,
+    ),
     selector,
   );
   const { kind, riskClass } = classifyForm(method, actionLabel, form, fields);

@@ -195,3 +195,78 @@ describe("G1: multilingual finalize and credential vocabulary", () => {
     expect(weiter.capabilities[0]).toMatchObject({ kind: "search", riskClass: "read" });
   });
 });
+
+describe("N7: nameless controls with duplicate or malformed ids", () => {
+  const PAGE = `<title>Nameless</title>
+<form id="f1" method="post" action="/a"><input id="q" aria-label="Q"><button>Save</button></form>
+<form id="f2" method="post" action="/b"><input id="q" aria-label="Q"><input id="1q" aria-label="Leading digit"><input id="user.email" aria-label="Dotted"><input id="form1:q" aria-label="Colon"><button>Save</button></form>
+<form id="f3" method="post" action="/c"><input id="dup" aria-label="First"><input id="dup" aria-label="Second"><button>Save</button></form>`;
+
+  it("gives every field a selector that resolves to exactly one control inside its own form", async () => {
+    const scan = await scanOwner(PAGE);
+    const page = host(PAGE);
+
+    for (const form of scan.capabilities) {
+      const element = page.querySelector(form.selector)!;
+      expect(element, form.selector).not.toBeNull();
+      for (const field of form.fields) {
+        const controls = [...page.querySelectorAll(field.selector)];
+        expect(controls, `${form.selector} ${field.name} ${field.selector}`).toHaveLength(1);
+        expect(element.contains(controls[0])).toBe(true);
+      }
+    }
+    const third = scan.capabilities.find((c) => c.selector === "#f3")!;
+    expect(third.fields.map((f) => f.name)).toEqual(["dup", "dup_2"]);
+    expect(new Set(third.fields.map((f) => f.id)).size).toBe(2);
+  });
+
+  it("stages against the right form and passes all ten checks", async () => {
+    const snapshot = await createOwnerSnapshot(PAGE);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const staged: { action: string | null; fields: Record<string, unknown> }[] = [];
+    const tools = createGenericToolDefinitions({
+      hostDocument: host(PAGE),
+      scan,
+      proposal,
+      modelContext: undefined,
+      onStaged: (change) => staged.push(change),
+    });
+    const second = tools.find((tool) => "user.email" in (tool.inputSchema as { properties: object }).properties)!;
+    second.execute({ q: "x", "user.email": "a@b.co" }, { signal: new AbortController().signal });
+    expect(staged).toEqual([expect.objectContaining({ action: "/b", fields: { q: "x", "user.email": "a@b.co" } })]);
+
+    const report = await runGenericChecks({ snapshot, scan, proposal });
+    expect(report.checks.filter((check) => check.status === "failed")).toEqual([]);
+    expect(report.passed).toBe(10);
+  });
+});
+
+describe("N8: namespaced ancestor tags", () => {
+  it("escapes the tag in the structural path so the form resolves", async () => {
+    const html = `<title>Word</title><div><o:p><form method="post" action="/w"><input name="x" aria-label="X"><button>Save</button></form></o:p></div>`;
+    const scan = await scanOwner(html);
+    const [form] = scan.capabilities;
+
+    expect(form.selector).toBe(String.raw`body > div > o\:p > form`);
+    expect(resolvesOnce(host(html), form.selector)).toBe(true);
+    const snapshot = await createOwnerSnapshot(html);
+    const report = await runGenericChecks({ snapshot, scan, proposal: await inferGenericCapabilities(scan) });
+    expect(report.passed).toBe(10);
+  });
+});
+
+describe("N8b: a write or search tool refuses when its form is missing", () => {
+  it("throws a clear error instead of staging with a null action", async () => {
+    const html = `<title>Drift</title><main><form method="post" action="/a"><label for="x">X</label><input id="x" name="x"><button>Save</button></form></main>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const drifted = host(`<title>Drift</title><main><p>form removed</p></main>`);
+    const staged: unknown[] = [];
+    const [save] = createGenericToolDefinitions({ hostDocument: drifted, scan, proposal, modelContext: undefined, onStaged: (c) => staged.push(c) });
+
+    expect(() => save.execute({}, { signal: new AbortController().signal })).toThrow(/The form for "save" is missing from the page/);
+    expect(staged).toEqual([]);
+  });
+});

@@ -113,6 +113,42 @@ describe("embed table conformance", () => {
   });
 });
 
+describe("embed missing-anchor conformance", () => {
+  it("throws the same error as the studio runtime when the bound form is gone", async () => {
+    const snapshot = await createOwnerSnapshot(
+      `<title>Drift</title><main><form id="note" method="post" action="/a"><label for="x">X</label><input id="x" name="x"><button>Save</button></form></main>`,
+    );
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    const embed = bundle.files.find((file) => file.path === "webmcp-retrofit.generated.js")!.content;
+
+    const [studioTool] = createGenericToolDefinitions({
+      hostDocument: new DOMParser().parseFromString("<main><p>gone</p></main>", "text/html"),
+      scan,
+      proposal,
+      modelContext: undefined,
+    });
+    const registered = new Map<string, WebMCP.ModelContextTool>();
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: { registerTool: (tool: WebMCP.ModelContextTool) => registered.set(tool.name, tool) },
+    });
+    try {
+      document.body.innerHTML = "<main><p>gone</p></main>";
+      new Function(embed)();
+      const embedTool = registered.get(studioTool.name)!;
+      const studio = await outcomes(() => studioTool.execute({}, { signal: new AbortController().signal }));
+      const shipped = await outcomes(() => embedTool.execute({}, { signal: new AbortController().signal }));
+      expect(shipped).toEqual(studio);
+      expect(studio.error).toBe('Error: The form for "save" is missing from the page');
+    } finally {
+      Reflect.deleteProperty(document, "modelContext");
+    }
+  });
+});
+
 describe("embed validator conformance", () => {
   it("agrees with the studio runtime on every case, outcome and message", async () => {
     const snapshot = await createOwnerSnapshot(PAGE);

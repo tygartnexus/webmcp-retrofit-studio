@@ -228,10 +228,11 @@ const EMBED_RUNTIME = String.raw`
     var values = validate(tool.inputSchema, input);
     var binding = tool.binding;
     if (binding.kind === "table") return readTable(binding, values);
-    var applied = apply(binding, values);
     var anchor = document.querySelector(binding.selector);
     var form = anchor && (anchor.closest("form") || anchor);
-    var action = form ? form.getAttribute("action") : null;
+    if (!form) throw new Error("The form for \"" + tool.name + "\" is missing from the page");
+    var applied = apply(binding, values);
+    var action = form.getAttribute("action");
     if (signal && signal.aborted) throw abortError();
     if (binding.kind === "search") {
       var params = new URLSearchParams();

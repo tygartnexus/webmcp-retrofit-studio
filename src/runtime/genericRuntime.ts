@@ -126,9 +126,12 @@ function applyValues(host: Document, capability: CapabilityObservation, values: 
   return values;
 }
 
-function formFor(host: Document, capability: CapabilityObservation): Element | null {
+/** The form a capability acts on. Throws rather than staging against nothing. */
+function formFor(host: Document, capability: CapabilityObservation, toolName: string): Element {
   const anchor = host.querySelector(capability.selector);
-  return anchor?.closest("form") ?? anchor;
+  const form = anchor?.closest("form") ?? anchor;
+  if (!form) throw new Error(`The form for "${toolName}" is missing from the page`);
+  return form;
 }
 
 function readTable(host: Document, capability: CapabilityObservation, page: number, limit: number): TableReadOutput {
@@ -193,8 +196,8 @@ function searchTool(binding: Binding, host: Document): WebMCP.ModelContextTool {
       const signal = signalFrom(options);
       assertExecutionActive(signal);
       const values = validateToolInput(binding.tool.inputSchema, input);
+      const form = formFor(host, binding.capability, binding.tool.name);
       const applied = applyValues(host, binding.capability, values);
-      const form = formFor(host, binding.capability);
       const query = new URLSearchParams(
         Object.entries(applied).map(([key, value]) => [key, String(value)]),
       ).toString();
@@ -202,7 +205,7 @@ function searchTool(binding: Binding, host: Document): WebMCP.ModelContextTool {
       return {
         status: "query_prepared",
         performed: false,
-        request: { method: "GET", action: form?.getAttribute("action") ?? null, query },
+        request: { method: "GET", action: form.getAttribute("action"), query },
         applied,
       };
     },
@@ -217,8 +220,8 @@ function writeTool(binding: Binding, options: GenericRuntimeOptions): WebMCP.Mod
       const signal = signalFrom(executeOptions);
       assertExecutionActive(signal);
       const values = validateToolInput(binding.tool.inputSchema, input);
+      const form = formFor(host, binding.capability, binding.tool.name);
       const applied = applyValues(host, binding.capability, values);
-      const form = formFor(host, binding.capability);
       const change: StagedChange = Object.freeze({
         id: nextId(),
         toolName: binding.tool.name,
@@ -226,7 +229,7 @@ function writeTool(binding: Binding, options: GenericRuntimeOptions): WebMCP.Mod
         actionLabel: binding.capability.actionLabel,
         heading: binding.capability.heading,
         method: binding.capability.method,
-        action: form?.getAttribute("action") ?? null,
+        action: form.getAttribute("action"),
         fields: applied,
         stagedAt: now(),
       });
