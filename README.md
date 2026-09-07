@@ -59,15 +59,16 @@ the generic flow:
    agent would. Search tools apply parameters and return the request the
    page would make without performing it. Write tools apply parameters and
    stage a change that waits for a passkey gesture. Nothing submits.
-4. **Validate.** Nine deterministic checks run against a fresh inert copy:
-   exact inventory, no finalizing or credential binding, hints match risk,
+4. **Validate.** Ten deterministic checks run against a fresh inert copy:
+   exact inventory, no finalizing or credential binding, every binding
+   resolves to one control on the page, hints match risk,
    contract lint, undeclared input rejected, no submit, read output within
    1.5K characters, cancellation honoured, writes stage for a person.
 5. **Export.** A hash-bound package: manifest, tool contracts with page
    bindings, PII-free evidence with any confirmation receipts, and an embed
    script that registers the tools on the live page and announces staged
    writes as a `webmcp-retrofit:staged` event for the page's own
-   confirmation step. Export refuses unless all nine checks passed for this
+   confirmation step. Export refuses unless all ten checks passed for this
    exact proposal.
 
 Design notes, the classification table, and what the embed does and does

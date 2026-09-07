@@ -29,14 +29,14 @@ function withExecute(
 }
 
 describe("generic deterministic checks", () => {
-  it("passes all nine checks for every bundled fixture and binds the report to the proposal", async () => {
+  it("passes all ten checks for every bundled fixture and binds the report to the proposal", async () => {
     for (const fixture of GENERIC_FIXTURES) {
       const input = await inputFor(fixture);
       const report = await runGenericChecks(input, { now: () => "2026-09-05T00:00:00.000Z" });
 
       expect(report.checks.map((check) => check.id)).toEqual(GENERIC_CHECKS.map((check) => check.id));
       expect(report.checks.filter((check) => check.status === "failed")).toEqual([]);
-      expect(report.passed).toBe(9);
+      expect(report.passed).toBe(10);
       expect(report.proposalHash).toBe(input.proposal.proposalHash);
       expect(isPassingGenericReport(report, input.proposal)).toBe(true);
       expect(Object.isFrozen(report)).toBe(true);
@@ -133,8 +133,8 @@ describe("generic deterministic checks", () => {
 
     const [a, b] = await Promise.all([runGenericChecks(contact), runGenericChecks(table)]);
 
-    expect(a.passed).toBe(9);
-    expect(b.passed).toBe(9);
+    expect(a.passed).toBe(10);
+    expect(b.passed).toBe(10);
     expect(HTMLFormElement.prototype.submit).toBe(originalSubmit);
     expect(HTMLFormElement.prototype.requestSubmit).toBe(originalRequestSubmit);
   });

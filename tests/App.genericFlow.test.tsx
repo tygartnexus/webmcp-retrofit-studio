@@ -87,7 +87,7 @@ describe("generic retrofit flow", () => {
     await screen.findByRole("heading", { name: "Validate generic tools" });
     expect(screen.getByRole("button", { name: /Continue to export/ })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Run deterministic checks" }));
-    await screen.findByRole("heading", { name: "9/9 passed" });
+    await screen.findByRole("heading", { name: "10/10 passed" });
     expect(screen.getByText(/1 of 1 staged change confirmed/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Continue to export/ }));

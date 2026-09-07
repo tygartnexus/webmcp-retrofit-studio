@@ -3,7 +3,7 @@ import { GENERIC_CHECKS } from "../../validation/runGenericChecks";
 import { GenericRegistrationBadge } from "./GenericRuntimeScreen";
 import type { GenericFlow } from "./useGenericFlow";
 
-/** Step 4 for a generic proposal: the nine deterministic checks. */
+/** Step 4 for a generic proposal: the ten deterministic checks. */
 
 interface GenericValidateScreenProps {
   flow: GenericFlow;
@@ -30,7 +30,7 @@ export function GenericValidateScreen({ flow, onContinue }: GenericValidateScree
         <div>
           <p className="eyebrow">4 of 5 · Validate</p>
           <h1>Validate generic tools</h1>
-          <p>Nine deterministic checks run against a fresh inert copy of the page.</p>
+          <p>Ten deterministic checks run against a fresh inert copy of the page.</p>
         </div>
         <GenericRegistrationBadge count={count} state={flow.registration} />
       </div>
@@ -93,7 +93,7 @@ export function GenericValidateScreen({ flow, onContinue }: GenericValidateScree
       </div>
       <div className="decision-bar validation-actions-bar">
         <div className="decision-status">
-          <ShieldCheck size={18} /> Export requires all nine checks to pass for this exact proposal
+          <ShieldCheck size={18} /> Export requires all ten checks to pass for this exact proposal
         </div>
         <div className="decision-actions">
           <button className="secondary-button" disabled={checksRunning} onClick={flow.runChecks} type="button">

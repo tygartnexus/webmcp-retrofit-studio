@@ -176,6 +176,23 @@ describe("generic runtime adapter", () => {
     expect((result.rows as string[][]).length).toBeGreaterThan(0);
   });
 
+  it("table output including its source marker never exceeds the budget at any cell width", async () => {
+    for (const width of [1, 8, 17, 23, 31, 40, 47, 55, 64, 79]) {
+      const rows = Array.from({ length: 60 }, (_, i) => `<tr><td>${"x".repeat(width)}${i}</td><td>${"y".repeat(width)}</td></tr>`).join("");
+      const snapshot: HtmlSnapshot = {
+        ...DATA_TABLE_FIXTURE,
+        id: `table-${width}`,
+        html: `<h2>Stock</h2><table id="stock"><thead><tr><th>A</th><th>B</th></tr></thead><tbody>${rows}</tbody></table>`,
+      };
+      const h = await harness(snapshot);
+      const [read] = createGenericToolDefinitions(h.options);
+      const result = read.execute({ limit: 100 }, { signal: new AbortController().signal }) as { source: string };
+
+      expect(result.source).toBe("page-table");
+      expect(JSON.stringify(result).length, `width ${width}`).toBeLessThanOrEqual(1500);
+    }
+  });
+
   it("write tools apply values, stage a change for human confirmation, and never submit", async () => {
     const h = await harness(CONTACT_FORM_FIXTURE);
     const send = toolNamed(createGenericToolDefinitions(h.options), "send_message");

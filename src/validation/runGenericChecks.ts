@@ -16,15 +16,17 @@ import { assertExpectedRejection } from "./runDeterministicChecks";
  * Deterministic checks for a generic proposal. They register the proposed
  * tools into a mock model context against a fresh inert copy of the page,
  * then prove the properties the owner is about to export: the inventory is
- * exact, nothing binds a finalizing or credential action, hints match risk,
- * contracts pass lint, undeclared input is rejected, nothing submits,
- * read output stays within budget, cancellation is honoured, and every write
- * stages for a person.
+ * exact, nothing binds a finalizing or credential action, every binding
+ * resolves to exactly one control on the page, hints match risk, contracts
+ * pass lint, undeclared input is rejected, nothing submits, read output stays
+ * within budget, cancellation is honoured, and every write stages for a
+ * person.
  */
 
 export const GENERIC_CHECKS = [
   { id: "inventory", label: "Registered tools match the proposal exactly" },
   { id: "exclusions-absent", label: "No tool binds a finalizing or credential action" },
+  { id: "bindings", label: "Every binding resolves to one control on the page" },
   { id: "annotations", label: "Read-only hints match risk classes" },
   { id: "contracts", label: "Every contract passes the static lint" },
   { id: "undeclared-input", label: "Undeclared input rejected" },
@@ -141,6 +143,34 @@ const checkExclusionsAbsent: Check = (context) => {
   return `${input.proposal.excluded.length} excluded action(s) stay off the tool surface`;
 };
 
+const checkBindings: Check = (context) => {
+  const { input, host, tools } = context;
+  let fieldSelectors = 0;
+  for (const name of tools.keys()) {
+    const tool = proposalTool(context, name);
+    expectCondition(tool, `"${name}" is not in the proposal`);
+    const capability = input.scan.capabilities.find((candidate) => candidate.id === tool.capabilityId);
+    expectCondition(capability, `"${name}" is not bound to any scanned capability`);
+    const anchors = host.querySelectorAll(capability.selector);
+    expectCondition(
+      anchors.length === 1,
+      `"${name}" selector ${capability.selector} matches ${anchors.length} element(s); expected exactly one`,
+    );
+    const anchor = anchors[0];
+    const scope = capability.kind === "table" ? anchor : (anchor.closest("form") ?? anchor);
+    for (const field of capability.fields.filter((candidate) => !candidate.excluded)) {
+      const controls = [...host.querySelectorAll(field.selector)];
+      expectCondition(controls.length > 0, `"${name}" field ${field.name} does not resolve on the page`);
+      expectCondition(
+        controls.every((control) => scope.contains(control)),
+        `"${name}" field ${field.name} resolves outside its own form`,
+      );
+      fieldSelectors += 1;
+    }
+  }
+  return `${tools.size} capability selector(s) and ${fieldSelectors} field selector(s) resolve uniquely`;
+};
+
 const checkAnnotations: Check = (context) => {
   for (const [name, tool] of context.tools) {
     const proposed = proposalTool(context, name);
@@ -249,6 +279,7 @@ const checkStaging: Check = async (context) => {
 const CHECKS: Readonly<Record<GenericCheckId, Check>> = Object.freeze({
   inventory: checkInventory,
   "exclusions-absent": checkExclusionsAbsent,
+  bindings: checkBindings,
   annotations: checkAnnotations,
   contracts: checkContracts,
   "undeclared-input": checkUndeclaredInput,

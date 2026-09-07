@@ -1,7 +1,7 @@
 # Generic scanner (preview slice)
 
 Status: full flow. Generic proposals are reviewed, approved, registered,
-exercised through a tool console, validated by nine deterministic checks, and
+exercised through a tool console, validated by ten deterministic checks, and
 exported as a hash-bound package. The booking fixture keeps its original
 hand-modelled flow alongside.
 
@@ -48,8 +48,9 @@ is orchestration only.
 
 Each `<form>` yields one primary capability plus extra capabilities for
 embedded search inputs and for `type="button"` controls, so a compound legacy
-form such as the booking page becomes three reviewable actions: the final
-submit, the search, and the review step. Each `<table>` with a header row
+form becomes several reviewable actions. No search extra is derived from a
+form whose primary action is credential or finalize; the booking page thus
+yields the final submit (excluded) and the review step. Each `<table>` with a header row
 yields a table capability with headers, row count, and previous or next
 pagination links.
 
@@ -69,7 +70,35 @@ and select options. Field values are never read.
 | table | table | read | read-only tool with `page` and `limit` |
 
 Credential wins over finalize, and finalize wins over search, so a checkout
-form with a search box is still excluded.
+form with a search box is still excluded, and no search tool is derived from
+a credential or finalize form.
+
+Finalize, credential, and search vocabulary covers English, German, French,
+Spanish, Italian, Portuguese, Dutch, Japanese, and Simplified Chinese action
+labels; Latin terms match on word boundaries and CJK terms as substrings.
+Read-navigation verbs (next, previous, sort, refresh) are Latin-script only,
+so a Japanese or Chinese GET form without a search term stages as a write. A term that is finalizing in one
+language and neutral in another errs toward exclusion, which is the safe
+direction. Other languages fall through to the default classification, so an
+owner reviewing a page in another language should read the proposal list
+before approving.
+
+### Selectors
+
+An element's id is used only when it is well formed and unique in the
+document. Otherwise the selector is a structural path from the nearest
+uniquely identified ancestor (or body) with one nth-of-type step per level,
+so it resolves to exactly that element even when the form lives in a
+different container from its siblings. Attribute values in selectors are
+CSS-escaped. Capability ids derive from these selectors and are suffixed if
+they ever collide.
+
+Residual risk: a structural path is still positional. If the live page
+reorders same-type siblings between scan and use without changing their
+count, the selector resolves to exactly one element, but a different one.
+The bindings check proves resolution and uniqueness, not identity. Owners
+should give retrofitted forms and controls stable ids; the scan prefers them
+whenever they are unique.
 
 ### Proposal
 
@@ -110,7 +139,7 @@ length, pattern, and format.
 ## Deterministic checks
 
 `src/validation/runGenericChecks.ts` registers the tools into a mock model
-context against a fresh inert copy of the page and runs nine checks. Each
+context against a fresh inert copy of the page and runs ten checks. Each
 has a failure-path test that breaks one tool through the `transformTool` or
 `extraTools` seam.
 
@@ -118,6 +147,7 @@ has a failure-path test that breaks one tool through the `transformTool` or
 |---|---|
 | inventory | registered names equal the proposal exactly |
 | exclusions-absent | no tool binds a finalize or credential action, and no name matches an excluded action |
+| bindings | every capability selector matches exactly one element and every field selector resolves inside that element's form (or table) |
 | annotations | readOnlyHint matches the risk class; untrustedContentHint set |
 | contracts | every contract passes the static lint |
 | undeclared-input | every tool rejects an undeclared property |
@@ -163,7 +193,7 @@ session for a capability of this proposal; the export refuses anything else.
 
 Candidates approves for runtime. Preview shows the registration badge, the
 tool console, and staged changes with a passkey confirmation per change.
-Validate runs the nine checks. Export shows the four files and their hashes
+Validate runs the ten checks. Export shows the four files and their hashes
 behind an exact-hash approval before a local download.
 
 ## Gaps closed before the runtime slice

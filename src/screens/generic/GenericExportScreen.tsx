@@ -40,7 +40,7 @@ export function GenericExportScreen({ flow }: { flow: GenericFlow }) {
           </div>
           <ul className="retention-list">
             <li>
-              <CheckCircle2 size={17} /> {flow.report?.passed ?? 0} of {flow.report?.total ?? 9} deterministic checks passed
+              <CheckCircle2 size={17} /> {flow.report?.passed ?? 0} of {flow.report?.total ?? 10} deterministic checks passed
             </li>
             <li>
               <CheckCircle2 size={17} /> {flow.outcome?.proposal.tools.length ?? 0} reviewed tool(s), {excluded} action(s) kept off the surface

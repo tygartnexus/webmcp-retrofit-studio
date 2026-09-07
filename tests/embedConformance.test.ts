@@ -71,6 +71,48 @@ const CASES: readonly { label: string; input: unknown }[] = [
   { label: "carrier outside enum", input: { ...VALID, carrier: "sea" } },
 ];
 
+describe("embed table conformance", () => {
+  it("returns the same rows, truncation, and size as the studio runtime for a large table", async () => {
+    const rows = Array.from({ length: 60 }, (_, i) => `<tr><td>${"x".repeat(23)}${i}</td><td>${"y".repeat(23)}</td></tr>`).join("");
+    const snapshot = await createOwnerSnapshot(
+      `<title>Stock</title><h1>Stock</h1><table id="stock"><thead><tr><th>A</th><th>B</th></tr></thead><tbody>${rows}</tbody></table>`,
+    );
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    const embed = bundle.files.find((file) => file.path === "webmcp-retrofit.generated.js")!.content;
+
+    const [studioTool] = createGenericToolDefinitions({
+      hostDocument: new DOMParser().parseFromString(snapshot.html, "text/html"),
+      scan,
+      proposal,
+      modelContext: undefined,
+    });
+    const registered = new Map<string, WebMCP.ModelContextTool>();
+    Object.defineProperty(document, "modelContext", {
+      configurable: true,
+      value: { registerTool: (tool: WebMCP.ModelContextTool) => registered.set(tool.name, tool) },
+    });
+    try {
+      document.body.innerHTML = new DOMParser().parseFromString(snapshot.html, "text/html").body.innerHTML;
+      new Function(embed)();
+      const embedTool = registered.get(studioTool.name)!;
+      const input = { limit: 100 };
+      const studio = studioTool.execute(input, { signal: new AbortController().signal }) as { rows: unknown[]; truncated: boolean };
+      const shipped = embedTool.execute(input, { signal: new AbortController().signal }) as { rows: unknown[]; truncated: boolean };
+
+      expect(shipped.rows.length).toBe(studio.rows.length);
+      expect(shipped.truncated).toBe(studio.truncated);
+      expect(JSON.stringify(shipped).length).toBe(JSON.stringify(studio).length);
+      expect(JSON.stringify(studio).length).toBeLessThanOrEqual(1500);
+    } finally {
+      Reflect.deleteProperty(document, "modelContext");
+    }
+  });
+});
+
 describe("embed validator conformance", () => {
   it("agrees with the studio runtime on every case, outcome and message", async () => {
     const snapshot = await createOwnerSnapshot(PAGE);

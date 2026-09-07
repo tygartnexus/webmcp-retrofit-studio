@@ -48,7 +48,7 @@ describe("generic export bundle", () => {
       toolNames: ["send_message"],
       excludedActions: [],
       proposalHash: input.proposal.proposalHash,
-      validation: { passed: 9, total: 9 },
+      validation: { passed: 10, total: 10 },
     });
     expect(first.manifest.artifacts.generatedJavaScriptSha256).toBe(first.files[3].sha256);
     expect(Object.isFrozen(first)).toBe(true);
@@ -62,7 +62,7 @@ describe("generic export bundle", () => {
     const input = await exportInput(CONTACT_FORM_FIXTURE);
     const other = await exportInput(DATA_TABLE_FIXTURE);
 
-    const failed = { ...input.validation, checks: input.validation.checks.map((c, i) => (i === 0 ? { ...c, status: "failed" as const } : c)), passed: 8 };
+    const failed = { ...input.validation, checks: input.validation.checks.map((c, i) => (i === 0 ? { ...c, status: "failed" as const } : c)), passed: 9 };
     await expect(buildGenericExportBundle({ ...input, validation: failed })).rejects.toThrow(/have not passed/);
     await expect(buildGenericExportBundle({ ...input, validation: other.validation })).rejects.toThrow(/have not passed/);
     const staged = [{ id: "staged-1", capabilityId: input.proposal.tools[0].capabilityId }];

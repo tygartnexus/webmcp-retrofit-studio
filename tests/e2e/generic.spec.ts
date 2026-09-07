@@ -57,7 +57,7 @@ test("generic flow: scan a contact form, approve, call the tool, stage, validate
   await page.getByRole("button", { name: /Continue to validate/ }).click();
   await expect(page.getByRole("heading", { name: "Validate generic tools" })).toBeVisible();
   await page.getByRole("button", { name: "Run deterministic checks" }).click();
-  await expect(page.getByRole("heading", { name: "9/9 passed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "10/10 passed" })).toBeVisible();
 
   await page.getByRole("button", { name: /Continue to export/ }).click();
   await expect(page.getByRole("heading", { name: "Export generic retrofit package" })).toBeVisible();

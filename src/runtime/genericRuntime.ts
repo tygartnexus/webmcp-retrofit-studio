@@ -55,6 +55,7 @@ export interface TableReadOutput {
   totalRows: number;
   hasMore: boolean;
   truncated: boolean;
+  source: "page-table";
 }
 
 /** Chrome's guidance caps tool output near 1.5K characters. */
@@ -146,6 +147,7 @@ function readTable(host: Document, capability: CapabilityObservation, page: numb
     totalRows: allRows.length,
     hasMore: start + rows.length < allRows.length,
     truncated,
+    source: "page-table",
   });
   while (rows.length > 1 && JSON.stringify(output()).length > OUTPUT_BUDGET_CHARS) {
     rows = rows.slice(0, -1);
@@ -179,7 +181,7 @@ function tableTool(binding: Binding, host: Document): WebMCP.ModelContextTool {
       const limit = typeof values.limit === "number" ? values.limit : DEFAULT_PAGE_LIMIT;
       const result = readTable(host, binding.capability, page, limit);
       assertExecutionActive(signal);
-      return { ...result, source: "page-table" };
+      return result;
     },
   };
 }

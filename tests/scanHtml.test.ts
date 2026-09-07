@@ -153,9 +153,9 @@ describe("generic HTML scanner", () => {
       "booking-time",
     ]);
     expect(form.buttons.map((button) => button.label)).toEqual(["Review booking", "Confirm booking"]);
+    // The search box lives inside a finalize form, so no search tool is derived from it.
     expect(result.capabilities.map((capability) => [capability.kind, capability.riskClass])).toEqual([
       ["form", "finalize"],
-      ["search", "read"],
       ["form", "write"],
     ]);
     const review = result.capabilities.find((capability) => capability.actionLabel === "Review booking")!;

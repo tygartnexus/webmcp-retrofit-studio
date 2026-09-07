@@ -91,13 +91,62 @@ export interface GenericScanResult {
 }
 
 const MAX_HTML_CHARS = 2_000_000;
-const FINALIZE_PATTERN =
-  /\b(place order|pay|purchase|checkout|confirm|finali[sz]e|delete|remove|cancel|destroy|purge|submit order|book now|deactivate|close account|terminate|unsubscribe|erase|wipe)\b/i;
-const SEARCH_PATTERN = /\b(search|find|filter|look ?up|browse)\b/i;
+/*
+ * Action vocabulary. Latin-script terms are matched on word boundaries; CJK
+ * terms are matched as substrings. Every language list errs toward exclusion:
+ * a false finalize or credential match keeps an action off the tool surface,
+ * which is the safe direction. JavaScript's  is ASCII-based, so every Latin
+ * term must start and end with an ASCII letter (diacritics only inside).
+ * Read verbs are Latin-script only; CJK read coverage is the search terms.
+ */
+const FINALIZE_TERMS = [
+  "place order", "pay", "purchase", "checkout", "confirm", "finali[sz]e", "delete", "remove", "cancel",
+  "destroy", "purge", "submit order", "book now", "deactivate", "close account", "terminate", "unsubscribe",
+  "erase", "wipe",
+  "löschen", "entfernen", "bestellen", "kostenpflichtig", "kaufen", "bezahlen", "zahlen", "bestätigen",
+  "kündigen", "stornieren", "konto schließen", "deaktivieren",
+  "supprimer", "effacer", "commander", "acheter", "payer", "confirmer", "résilier", "annuler",
+  "se désabonner", "désactiver",
+  "eliminar", "borrar", "comprar", "pagar", "confirmar", "cancelar", "darse de baja", "desactivar",
+  "finalizar compra",
+  "elimina(?:re)?", "cancella(?:re)?", "acquista(?:re)?", "paga(?:re)?", "conferma(?:re)?", "annulla(?:re)?",
+  "disattiva(?:re)?",
+  "excluir", "apagar", "encerrar", "desativar",
+  "verwijderen", "kopen", "betalen", "bevestigen", "opzeggen", "annuleren", "deactiveren",
+];
+const FINALIZE_TERMS_CJK = ["削除", "購入", "注文", "支払", "確定", "退会", "解約", "删除", "购买", "订单", "支付", "确认", "注销"];
+const CREDENTIAL_TERMS = [
+  "log ?in", "sign ?in", "log ?out", "sign ?out", "authenticate", "password",
+  "anmelden", "einloggen", "abmelden", "ausloggen", "passwort", "kennwort",
+  "connexion", "se connecter", "connectez-vous", "déconnexion", "se déconnecter", "mot de passe",
+  "iniciar sesión", "acceder", "cerrar sesión", "contraseña",
+  "accedi", "accesso", "esci",
+  "entrar", "sair", "senha",
+  "inloggen", "aanmelden", "uitloggen", "afmelden", "wachtwoord",
+];
+const CREDENTIAL_TERMS_CJK = ["ログイン", "ログアウト", "パスワード", "登录", "登出", "密码"];
+const SEARCH_TERMS = [
+  "search", "find", "filter", "look ?up", "browse",
+  "suchen", "filtern", "rechercher", "chercher", "filtrer", "buscar", "filtrar", "cerca", "pesquisar", "zoeken",
+];
+const SEARCH_TERMS_CJK = ["検索", "搜索"];
+const READ_VERBS = [
+  "go", "apply filters?", "sort", "show", "view", "list", "next", "previous", "prev", "page", "refresh", "load more",
+  "export", "weiter", "zurück", "anzeigen", "suivant", "précédent", "afficher", "siguiente", "anterior", "mostrar",
+  "avanti", "indietro", "mostra", "próximo", "seguinte", "volgende", "vorige", "tonen",
+];
+
+function vocabulary(latin: readonly string[], cjk: readonly string[], anchored = false): RegExp {
+  const latinGroup = `${anchored ? "^" : "\\b"}(?:${latin.join("|")})\\b`;
+  const cjkGroup = `${anchored ? "^" : ""}(?:${cjk.join("|")})`;
+  return new RegExp(`${latinGroup}|${cjkGroup}`, "iu");
+}
+
+const FINALIZE_PATTERN = vocabulary(FINALIZE_TERMS, FINALIZE_TERMS_CJK);
+const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
 /** Action labels that read or navigate without changing state. */
-const READ_ACTION_PATTERN =
-  /^(go|search|find|filter|apply filters?|sort|show|view|list|browse|look ?up|next|previous|prev|page|refresh|load more|export)\b/i;
-const CREDENTIAL_ACTION_PATTERN = /\b(log ?in|sign ?in|log ?out|sign ?out|authenticate|password)\b/i;
+const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);
+const CREDENTIAL_ACTION_PATTERN = vocabulary(CREDENTIAL_TERMS, CREDENTIAL_TERMS_CJK);
 const PAYMENT_NAME_PATTERN = /(card|cvv|cvc|expir|iban|routing|account ?number)/i;
 
 
@@ -105,9 +154,47 @@ function text(node: Element | null): string {
   return (node?.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
-function selectorFor(element: Element, fallback: string): string {
+const ID_PATTERN = /^[A-Za-z][\w-]*$/;
+
+/** The element's id, only when it is well formed and unique in the document. */
+function uniqueId(element: Element, document: Document): string | null {
   const id = element.getAttribute("id");
-  return id && /^[A-Za-z][\w-]*$/.test(id) ? `#${id}` : fallback;
+  if (!id || !ID_PATTERN.test(id)) return null;
+  return document.querySelectorAll(`#${CSS.escape(id)}`).length === 1 ? id : null;
+}
+
+/**
+ * A structural path from the nearest uniquely identified ancestor (or body),
+ * one nth-of-type step per level, so it resolves to exactly this element.
+ * Unlike a document-wide index, nth-of-type is sibling-scoped, which is why
+ * the path must include every level.
+ */
+function structuralSelector(element: Element, document: Document): string {
+  const steps: string[] = [];
+  let current: Element | null = element;
+  while (current && current !== document.body && current !== document.documentElement) {
+    const id = uniqueId(current, document);
+    if (id) {
+      steps.unshift(`#${id}`);
+      return steps.join(" > ");
+    }
+    const parent: Element | null = current.parentElement;
+    const tag = current.tagName.toLowerCase();
+    const sameTag = parent ? [...parent.children].filter((child) => child.tagName === current!.tagName) : [current];
+    steps.unshift(sameTag.length === 1 ? tag : `${tag}:nth-of-type(${sameTag.indexOf(current) + 1})`);
+    current = parent;
+  }
+  steps.unshift("body");
+  return steps.join(" > ");
+}
+
+function selectorFor(element: Element, document: Document): string {
+  const id = uniqueId(element, document);
+  return id ? `#${id}` : structuralSelector(element, document);
+}
+
+function attributeSelector(scope: string, attribute: string, value: string): string {
+  return `${scope} [${attribute}="${CSS.escape(value)}"]`;
 }
 
 function nearestHeading(element: Element, document: Document): string {
@@ -175,16 +262,17 @@ function numberAttribute(control: Element, attribute: string): number | undefine
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function observeField(control: Element, form: Element, formSelector: string): FieldObservation | null {
+function observeField(control: Element, form: Element, formSelector: string, document: Document): FieldObservation | null {
   const name = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
   if (!name) return null;
   const inputType = (control.getAttribute("type") ?? (control.tagName === "SELECT" ? "select" : "text")).toLowerCase();
   if (inputType === "submit" || inputType === "button" || inputType === "reset" || inputType === "image") return null;
   const excluded = exclusionFor(control, inputType, name);
+  const controlId = uniqueId(control, document);
   const field: FieldObservation = {
     id: `${formSelector}:field:${name}`,
     name,
-    selector: selectorFor(control, `${formSelector} [name="${name}"]`),
+    selector: controlId ? `#${controlId}` : attributeSelector(formSelector, "name", name),
     inputType,
     kind: fieldKind(control, inputType),
     required: control.hasAttribute("required"),
@@ -244,7 +332,7 @@ function collapseRadioGroups(
     }
     const existing = groups.get(field.name);
     if (!existing) {
-      const group = { ...field, selector: `${formSelector} [name="${field.name}"]` };
+      const group = { ...field, selector: attributeSelector(formSelector, "name", field.name) };
       groups.set(field.name, group);
       collapsed.push(group);
       continue;
@@ -260,11 +348,11 @@ function collapseRadioGroups(
   return collapsed;
 }
 
-function observeButtons(form: Element, formSelector: string): ButtonObservation[] {
-  return [...form.querySelectorAll("button, input[type=submit]")].map((button, index) => ({
+function observeButtons(form: Element, document: Document): ButtonObservation[] {
+  return [...form.querySelectorAll("button, input[type=submit]")].map((button) => ({
     label: button.tagName === "INPUT" ? (button.getAttribute("value") ?? "Submit") : text(button),
     type: (button.getAttribute("type") ?? "submit").toLowerCase(),
-    selector: selectorFor(button, `${formSelector} button:nth-of-type(${index + 1})`),
+    selector: selectorFor(button, document),
   }));
 }
 
@@ -294,16 +382,16 @@ function classifyForm(
  * becomes its own observation so review and risk classification stay per
  * action rather than per form.
  */
-function observeForm(form: Element, index: number, document: Document): CapabilityObservation[] {
-  const selector = selectorFor(form, `form:nth-of-type(${index + 1})`);
+function observeForm(form: Element, document: Document): CapabilityObservation[] {
+  const selector = selectorFor(form, document);
   const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
   const heading = nearestHeading(form, document);
-  const buttons = observeButtons(form, selector);
+  const buttons = observeButtons(form, document);
   const submit = buttons.find((button) => button.type === "submit") ?? buttons[0];
   const actionLabel = submit?.label ?? "Submit";
   const fields = collapseRadioGroups(
     [...form.querySelectorAll("input, select, textarea")]
-      .map((control) => observeField(control, form, selector))
+      .map((control) => observeField(control, form, selector, document))
       .filter((field): field is FieldObservation => field !== null),
     selector,
   );
@@ -321,7 +409,8 @@ function observeForm(form: Element, index: number, document: Document): Capabili
   };
   const extras: CapabilityObservation[] = [];
   const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);
-  if (kind !== "search" && searchFields.length > 0) {
+  const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
+  if (kind !== "search" && !primaryIsExcluded && searchFields.length > 0) {
     extras.push({
       id: `search:${selector}`,
       kind: "search",
@@ -351,10 +440,10 @@ function observeForm(form: Element, index: number, document: Document): Capabili
   return [primary, ...extras];
 }
 
-function observeTable(table: Element, index: number, document: Document): CapabilityObservation | null {
+function observeTable(table: Element, document: Document): CapabilityObservation | null {
   const headers = [...table.querySelectorAll("thead th")].map((th) => text(th)).filter(Boolean);
   if (headers.length === 0) return null;
-  const selector = selectorFor(table, `table:nth-of-type(${index + 1})`);
+  const selector = selectorFor(table, document);
   const rowCount = table.querySelectorAll("tbody tr").length;
   const previous = document.querySelector('a[rel="prev"], [aria-label*="pagination" i] a:first-of-type') !== null;
   const next = document.querySelector('a[rel="next"]') !== null;
@@ -372,6 +461,16 @@ function observeTable(table: Element, index: number, document: Document): Capabi
   };
 }
 
+/** Selectors are unique per element, so ids collide only in pathological markup; suffix them anyway. */
+function withUniqueIds(capabilities: readonly CapabilityObservation[]): CapabilityObservation[] {
+  const seen = new Map<string, number>();
+  return capabilities.map((capability) => {
+    const count = (seen.get(capability.id) ?? 0) + 1;
+    seen.set(capability.id, count);
+    return count === 1 ? capability : { ...capability, id: `${capability.id}#${count}` };
+  });
+}
+
 export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResult> {
   const html = snapshot.html;
   if (typeof html !== "string" || html.trim().length === 0) {
@@ -383,11 +482,11 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
 
   const document = new DOMParser().parseFromString(html, "text/html");
   const scriptsIgnored = document.querySelectorAll("script").length;
-  const forms = [...document.querySelectorAll("form")].flatMap((form, index) => observeForm(form, index, document));
+  const forms = [...document.querySelectorAll("form")].flatMap((form) => observeForm(form, document));
   const tables = [...document.querySelectorAll("table")]
-    .map((table, index) => observeTable(table, index, document))
+    .map((table) => observeTable(table, document))
     .filter((table): table is CapabilityObservation => table !== null);
-  const capabilities = [...forms, ...tables];
+  const capabilities = withUniqueIds([...forms, ...tables]);
   const allFields = capabilities.flatMap((capability) => capability.fields);
 
   return deepFreeze({
