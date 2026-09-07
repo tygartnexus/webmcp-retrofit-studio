@@ -146,7 +146,9 @@ function readTable(host: Document, capability: CapabilityObservation, page: numb
   const table = host.querySelector(capability.selector);
   if (!table) throw new Error("The bound table is missing from the page");
   const owned = (node: Element) => node.closest("table") === table;
-  const allRows = [...table.querySelectorAll("tr")].filter((row) => owned(row) && [...row.querySelectorAll("td")].some(owned));
+  const allRows = [...table.querySelectorAll("tr")].filter(
+    (row) => owned(row) && row.parentElement?.tagName !== "TFOOT" && [...row.querySelectorAll("td")].some(owned),
+  );
   const columns = capability.table?.headers ?? [];
   const start = (page - 1) * limit;
   const rawRows = allRows.slice(start, start + limit).map((row) => [...row.querySelectorAll("td")].filter(owned).map(cellText));

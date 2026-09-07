@@ -247,7 +247,8 @@ const EMBED_RUNTIME = String.raw`
     if (!table) throw new Error("The bound table is missing from the page");
     var owned = function (node) { return node.closest("table") === table; };
     var rows = Array.prototype.filter.call(table.querySelectorAll("tr"), function (row) {
-      return owned(row) && Array.prototype.some.call(row.querySelectorAll("td"), owned);
+      var inFooter = row.parentNode && row.parentNode.tagName === "TFOOT";
+      return owned(row) && !inFooter && Array.prototype.some.call(row.querySelectorAll("td"), owned);
     });
     var page = typeof values.page === "number" ? values.page : 1, limit = typeof values.limit === "number" ? values.limit : 25;
     var start = (page - 1) * limit;

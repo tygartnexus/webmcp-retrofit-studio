@@ -71,7 +71,8 @@ counts in the envelope and still classifies its form.
 Tables: the header comes from `thead` cells, else the first row made only of
 `th` cells; a table with neither is not modelled. A table owns only the rows
 and cells outside any table nested in its cells, in the scan, the runtime,
-and the embed alike. Pagination is read from
+and the embed alike; footer rows are not data, and a pager in the table's
+own footer or caption belongs to it. Pagination is read from
 the table's own neighbourhood (its container when it holds one table,
 otherwise the siblings up to the next table) and only from links with
 `rel="prev"`/`rel="next"` or whose whole text is previous/next wording
@@ -100,9 +101,16 @@ exactly one field of an Enter-submitting input type (text, search, url,
 tel, email, password, date, month, week, time, datetime-local, number);
 selects and textareas do not count. A button-less form whose action is
 credential or finalize is still listed as excluded, and its controls still
-count in the safety envelope. A button holding only an image takes the
-image's alt text. Tool titles are clipped to 120 characters, and tables
-that share a heading carry an ordinal in their title. `input type="button"`
+count in the safety envelope. Button labels follow the accessible-name
+order: aria-label, then content (visible text, or a visible image's alt,
+or an input's value or alt), then title, then a generic word; labels are
+clipped to 120 characters. Controls associated to a form by a form
+attribute count as its controls, for fields, buttons, classification, and
+the envelope, and a nameless Enter-submitting input still blocks implicit
+submission. When a search field has its own read tool, the form's write
+tool does not also carry it. Tool titles are clipped to 120 characters
+with any distinguishing suffix kept, and the second and later tables under
+one heading carry an ordinal in their title. `input type="button"`
 counts like a `button type="button"`. A GET submit button keeps the form's
 search fields. Excluded controls are counted once per form even when
 several capabilities share the form's fields. A form inside a table row or a repeated container carries a row

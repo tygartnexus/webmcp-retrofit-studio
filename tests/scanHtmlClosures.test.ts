@@ -288,8 +288,9 @@ describe("R28: plain buttons ignore formmethod, and GET submits keep search fiel
     const scan = await scanOwner(html);
     const proposal = await inferGenericCapabilities(scan);
     const tools = proposal.tools.map((t) => [t.name, Object.keys(t.inputSchema.properties)]);
+    // The search field has its own read tool, so the POST write does not also carry it.
     expect(tools).toEqual([
-      ["save", ["q", "note"]],
+      ["save", ["note"]],
       ["search_orders", ["q"]],
       ["search_results", ["q", "note"]],
     ]);
@@ -461,5 +462,100 @@ describe("R40: tables under one heading carry an ordinal in their title", () => 
       ["read_levels_2", "Read Levels (2)"],
       ["read_levels_3", "Read Levels (3)"],
     ]);
+  });
+});
+
+describe("R41: button labels follow accessible-name order and ignore hidden images", () => {
+  it("lets aria-label win over an icon or visible text, so a decorated finalize action stays excluded", async () => {
+    const icon = await scanOwner(`<form method="get" action="/x"><input name="q" aria-label="Term"><button aria-label="Delete account"><img alt="Go"></button></form>`);
+    const visible = await scanOwner(`<form method="get" action="/x"><input name="q" aria-label="Term"><button aria-label="Delete account">Go</button></form>`);
+    expect(icon.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+    expect(visible.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Delete account", "finalize"]]);
+  });
+
+  it("ignores a hidden image's alt", async () => {
+    const scan = await scanOwner(`<form method="get" action="/x"><input name="q" aria-label="Term"><button><img alt="Find" hidden></button></form>`);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Submit", "write"]]);
+  });
+
+  it("clips a very long label at the scan so the staged change carries the clipped label", async () => {
+    const label = "Send the completed application form to the regional office for review ".repeat(6);
+    const html = `<form id="f" method="post" action="/s"><input name="a" aria-label="A"><button>${label}</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].actionLabel.length).toBeLessThanOrEqual(120);
+    const proposal = await inferGenericCapabilities(scan);
+    const staged: { actionLabel: string }[] = [];
+    const [tool] = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined, onStaged: (c) => staged.push(c) });
+    tool.execute({ a: "x" }, { signal: new AbortController().signal });
+    expect(staged[0].actionLabel.length).toBeLessThanOrEqual(120);
+  });
+});
+
+describe("R42: footer rows are not data and a footer pager belongs to its table", () => {
+  it("detects a tfoot pager and excludes the footer row from reads in studio and embed", async () => {
+    const html = `<h2>Orders</h2><table id="t"><thead><tr><th>Id</th></tr></thead><tbody><tr><td>1</td></tr><tr><td>2</td></tr></tbody><tfoot><tr><td><a href="?p=2" rel="next">Next</a></td></tr></tfoot></table>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].table).toEqual({ headers: ["Id"], rowCount: 2, pagination: { previous: false, next: true } });
+    const proposal = await inferGenericCapabilities(scan);
+    const [read] = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined });
+    const rows = (read.execute({}, { signal: new AbortController().signal }) as { rows: string[][] }).rows;
+    expect(rows).toEqual([["1"], ["2"]]);
+    const { registered, dispose } = await embedTools(html);
+    try {
+      expect((registered.get("read_orders")!.execute({}, { signal: new AbortController().signal }) as { rows: string[][] }).rows).toEqual(rows);
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("R43: title suffixes survive the budget and ordinals only count tables", () => {
+  const table = (id: string) => `<table id="${id}"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+
+  it("keeps the ordinal on a long heading", async () => {
+    const heading = "Consolidated statement of comprehensive income and retained earnings for the current and prior reporting periods";
+    const proposal = await inferGenericCapabilities(await scanOwner(`<h2>${heading}</h2>${table("a")}${table("b")}`));
+    const titles = proposal.tools.map((t) => t.title);
+    expect(titles[0].length).toBeLessThanOrEqual(120);
+    expect(titles[1].length).toBeLessThanOrEqual(120);
+    expect(titles[1].endsWith(" (2)")).toBe(true);
+    expect(titles[0]).not.toBe(titles[1]);
+  });
+
+  it("does not add an ordinal to a lone table whose name collides with a write tool", async () => {
+    const proposal = await inferGenericCapabilities(
+      await scanOwner(`<h2>Levels</h2><form id="f" method="post"><input name="a" aria-label="A"><button>Read levels</button></form>${table("only")}`),
+    );
+    expect(proposal.tools.map((t) => [t.name, t.title])).toEqual([
+      ["read_levels", "Read levels"],
+      ["read_levels_2", "Read Levels"],
+    ]);
+  });
+});
+
+describe("R44: controls associated by a form attribute belong to the form", () => {
+  it("classifies an external password as credential and finds an external submit button", async () => {
+    const html = `<form id="op" method="post" action="/login"><input name="user" aria-label="User"><button>Continue</button></form><input type="password" name="pw" form="op">
+<form id="ob" method="post" action="/save"><input name="a" aria-label="A"><input name="b" aria-label="B"></form><label for="c">C</label><input id="c" name="c" form="ob"><button form="ob">Save</button>`;
+    const scan = await scanOwner(html);
+    const login = scan.capabilities.find((c) => c.selector === "#op")!;
+    const save = scan.capabilities.find((c) => c.selector === "#ob")!;
+
+    expect(login.riskClass).toBe("credential");
+    expect(scan.safety.credentialFieldsExcluded).toBe(1);
+    expect(save.actionLabel).toBe("Save");
+    expect(save.fields.map((f) => [f.name, f.label])).toEqual([["a", "A"], ["b", "B"], ["c", "C"]]);
+    const page = host(html);
+    for (const field of save.fields) expect(page.querySelectorAll(field.selector)).toHaveLength(1);
+    const proposal = await inferGenericCapabilities(scan);
+    const snapshot = await createOwnerSnapshot(html);
+    expect((await runGenericChecks({ snapshot, scan, proposal })).passed).toBe(10);
+  });
+});
+
+describe("R45: a nameless Enter-submitting input still blocks implicit submission", () => {
+  it("proposes nothing for a search field beside a nameless text input and no button", async () => {
+    const scan = await scanOwner(`<form id="n" method="get"><input type="search" name="q" aria-label="Q"><input type="text"></form>`);
+    expect(scan.capabilities).toEqual([]);
   });
 });

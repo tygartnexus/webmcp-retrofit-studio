@@ -218,17 +218,24 @@ function tableSchema(): ProposedToolSchema {
   };
 }
 
-function proposeTool(capability: CapabilityObservation, taken: Set<string>): ProposedTool {
+/** A title whose distinguishing suffix survives the budget. */
+function titled(base: string, suffix: string): string {
+  return `${truncate(base, TITLE_BUDGET - suffix.length)}${suffix}`;
+}
+
+function proposeTool(capability: CapabilityObservation, taken: Set<string>, tableStems: Map<string, number>): ProposedTool {
   const evidenceIds = [capability.id, ...capability.fields.filter((f) => !f.excluded).map((f) => f.id)];
   if (capability.kind === "table" && capability.table) {
     const noun = capability.heading;
     const stem = stemFor("read_", noun, "read_", true);
     const name = uniqueName(stem, taken);
-    // Several tables under one heading: the ordinal that made the name unique also marks the title.
-    const ordinal = name === budgetName(stem) ? "" : ` (${name.slice(name.lastIndexOf("_") + 1)})`;
+    // Several tables under one heading: the second and later carry an ordinal in the title.
+    const seen = (tableStems.get(stem) ?? 0) + 1;
+    tableStems.set(stem, seen);
+    const ordinal = seen > 1 ? ` (${seen})` : "";
     return {
       name,
-      title: truncate(`Read ${noun}${ordinal}`, TITLE_BUDGET),
+      title: titled(`Read ${noun}`, ordinal),
       description: truncate(`Read rows from the ${noun} table with paging. This tool does not modify state.`, DESCRIPTION_BUDGET),
       inputSchema: tableSchema(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
@@ -243,7 +250,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
     const viaButton = capability.id.startsWith("action:") ? ` (${capability.actionLabel})` : "";
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
-      title: truncate(`Search ${noun}${viaButton}`, TITLE_BUDGET),
+      title: titled(`Search ${noun}`, viaButton),
       description: truncate(
         `Search ${noun} using the ${capability.heading} form${viaButton ? ` through its "${capability.actionLabel}" button` : ""}. This tool does not modify state.`,
         DESCRIPTION_BUDGET,
@@ -259,7 +266,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   const row = capability.rowLabel;
   return {
     name: uniqueName(stemFor("", row ? `${action} ${row}` : action, "write_"), taken),
-    title: truncate(row ? `${action}: ${row}` : action, TITLE_BUDGET),
+    title: row ? titled(action, `: ${row}`) : truncate(action, TITLE_BUDGET),
     description: truncate(
       row
         ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`
@@ -276,6 +283,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
 
 export async function inferGenericCapabilities(scan: GenericScanResult): Promise<GenericProposal> {
   const taken = new Set<string>();
+  const tableStems = new Map<string, number>();
   const tools: ProposedTool[] = [];
   const excluded: ExcludedCapability[] = [];
   for (const capability of scan.capabilities) {
@@ -288,7 +296,7 @@ export async function inferGenericCapabilities(scan: GenericScanResult): Promise
       });
       continue;
     }
-    tools.push(proposeTool(capability, taken));
+    tools.push(proposeTool(capability, taken, tableStems));
   }
   const humanConfirmationBoundary = "outside-tool-surface" as const;
   const versionHash = await sha256Hex(

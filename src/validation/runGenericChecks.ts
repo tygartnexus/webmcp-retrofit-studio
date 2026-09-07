@@ -161,8 +161,11 @@ const checkBindings: Check = (context) => {
     for (const field of capability.fields.filter((candidate) => !candidate.excluded)) {
       const controls = [...host.querySelectorAll(field.selector)];
       expectCondition(controls.length > 0, `"${name}" field ${field.name} does not resolve on the page`);
+      const scopeId = scope.getAttribute("id");
+      const belongs = (control: Element) =>
+        scope.contains(control) || (scopeId !== null && control.getAttribute("form") === scopeId);
       expectCondition(
-        controls.every((control) => scope.contains(control)),
+        controls.every(belongs),
         `"${name}" field ${field.name} resolves outside its own form`,
       );
       fieldSelectors += 1;

@@ -1,7 +1,7 @@
 import type { HtmlSnapshot } from "../fixtures/genericFixtures";
 import { sha256Hex } from "./scanOwnedFixture";
 import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
-import { clipLabel, text, visibleText } from "./scanText";
+import { clipLabel, isHiddenElement, text, visibleText } from "./scanText";
 import {
   CREDENTIAL_ACTION_PATTERN,
   FINALIZE_PATTERN,
@@ -132,7 +132,7 @@ function nearestHeading(element: Element, document: Document): string {
 function labelFor(control: Element, form: Element): string | undefined {
   const id = control.getAttribute("id");
   if (id) {
-    const label = form.querySelector(`label[for="${CSS.escape(id)}"]`);
+    const label = form.querySelector(`label[for="${CSS.escape(id)}"]`) ?? control.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`);
     if (label) return text(label);
   }
   const wrapping = control.closest("label");
@@ -190,9 +190,10 @@ function numberAttribute(control: Element, attribute: string): number | undefine
  * checkbox), else a structural path. A nameless control never gets a name
  * selector built from its id.
  */
-function controlSelector(control: Element, formSelector: string, inputType: string, document: Document): string {
+function controlSelector(control: Element, form: Element, formSelector: string, inputType: string, document: Document): string {
   const id = uniqueId(control, document);
   if (id) return `#${id}`;
+  if (control.closest("form") !== form) return structuralSelector(control, document);
   const nameAttribute = control.getAttribute("name");
   if (nameAttribute) {
     const sharing = control.closest("form")?.querySelectorAll(attributeSelector("", "name", nameAttribute).trim()).length ?? 1;
@@ -215,7 +216,7 @@ function observeField(control: Element, form: Element, formSelector: string, doc
   const field: FieldObservation = {
     id: `${formSelector}:field:${name}`,
     name,
-    selector: controlSelector(control, formSelector, inputType, document),
+    selector: controlSelector(control, form, formSelector, inputType, document),
     inputType,
     kind: fieldKind(control, inputType),
     required: control.hasAttribute("required"),
@@ -378,18 +379,62 @@ function isSubmitType(type: string): boolean {
   return type === "submit" || type === "image";
 }
 
+/** Action labels are clipped so a decorative or generated label cannot balloon names, titles, or staged changes. */
+const LABEL_BUDGET = 120;
+
+function clipTo(value: string, budget: number): string {
+  return value.length <= budget ? value : `${value.slice(0, budget - 1)}…`;
+}
+
+/** The alt text of an image inside the button that a person can actually see. */
+function visibleImageAlt(button: Element): string | undefined {
+  const visible = [...button.querySelectorAll("img[alt]")].find((image) => {
+    for (let node: Element | null = image; node && node !== button; node = node.parentElement) {
+      if (isHiddenElement(node)) return false;
+    }
+    return true;
+  });
+  return visible?.getAttribute("alt")?.trim() || undefined;
+}
+
+/**
+ * Accessible-name order: aria-label wins over content, content (text, then a
+ * visible image's alt, or an input's value or alt) wins over title, and a
+ * generic word stands in when nothing names the control.
+ */
 function buttonLabel(button: Element, type: string): string {
-  const accessible = button.getAttribute("aria-label")?.trim() || button.getAttribute("title")?.trim();
+  const ariaLabel = button.getAttribute("aria-label")?.trim();
+  const title = button.getAttribute("title")?.trim();
   const fallback = type === "button" ? "Button" : "Submit";
-  if (button.tagName !== "INPUT") {
-    return text(button) || button.querySelector("img[alt]")?.getAttribute("alt")?.trim() || accessible || fallback;
-  }
-  if (type === "image") return button.getAttribute("alt")?.trim() || accessible || "Submit";
-  return button.getAttribute("value")?.trim() || accessible || fallback;
+  const content =
+    button.tagName !== "INPUT"
+      ? text(button) || visibleImageAlt(button)
+      : type === "image"
+        ? button.getAttribute("alt")?.trim()
+        : button.getAttribute("value")?.trim();
+  return clipTo(ariaLabel || content || title || fallback, LABEL_BUDGET);
+}
+
+/**
+ * Controls that belong to a form: those inside it plus those associated to it
+ * by a form attribute, in document order. Image buttons are included even
+ * though form.elements omits them.
+ */
+function formControls(form: Element, document: Document): Element[] {
+  const inside = [...form.querySelectorAll("input, select, textarea, button")];
+  const id = form.getAttribute("id");
+  const outside = id
+    ? [...document.querySelectorAll(`[form="${CSS.escape(id)}"]`)].filter(
+        (element) => /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(element.tagName) && element.closest("form") !== form,
+      )
+    : [];
+  return [...inside, ...outside].sort((a, b) =>
+    a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+  );
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
-  return [...form.querySelectorAll(BUTTON_SELECTOR)].map((button) => {
+  return formControls(form, document).filter((control) => control.matches(BUTTON_SELECTOR)).map((button) => {
     const type = (button.getAttribute("type") ?? "submit").toLowerCase();
     // Only a submitting control can redirect the submission; formaction on a plain button is inert.
     const formAction = isSubmitType(type) ? button.getAttribute("formaction")?.trim() : undefined;
@@ -501,10 +546,12 @@ function observeForm(form: Element, document: Document): FormObservation {
   const actionLabel = submit?.label ?? "Submit";
   const primaryMethod = submit?.formMethod ?? method;
   const primaryAction = submit?.formAction;
+  const controls = formControls(form, document);
   const fields = dedupeFieldNames(
     collapseCheckboxGroups(
       collapseRadioGroups(
-        [...form.querySelectorAll("input, select, textarea")]
+        controls
+          .filter((control) => control.matches("input, select, textarea"))
           .map((control) => observeField(control, form, selector, document))
           .filter((field): field is FieldObservation => field !== null),
         selector,
@@ -514,11 +561,16 @@ function observeForm(form: Element, document: Document): FormObservation {
     selector,
   );
   const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
-  // Without a submitting control a form only submits implicitly, and only with a single text-like field.
-  // An excluded form is still listed even then, so the owner sees why nothing was proposed.
-  const textLike = fields.filter((field) => !field.excluded && IMPLICIT_SUBMIT_TYPES.has(field.inputType));
+  // Without a submitting control a form only submits implicitly, and only with a single Enter-submitting
+  // input, nameless ones included. An excluded form is still listed, so the owner sees why nothing was proposed.
+  const blockers = controls.filter(
+    (control) =>
+      control.tagName === "INPUT" && IMPLICIT_SUBMIT_TYPES.has((control.getAttribute("type") ?? "text").toLowerCase()),
+  );
   const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
-  const hasPrimary = submit !== undefined || textLike.length === 1 || primaryIsExcluded;
+  const hasPrimary = submit !== undefined || blockers.length === 1 || primaryIsExcluded;
+  const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);
+  const emitSearch = hasPrimary && kind !== "search" && !primaryIsExcluded && searchFields.length > 0;
   const primary: CapabilityObservation = {
     id: `${kind}:${selector}`,
     kind,
@@ -529,19 +581,19 @@ function observeForm(form: Element, document: Document): FormObservation {
     method: primaryMethod,
     actionLabel,
     riskClass,
-    fields,
+    // A search field with its own read tool is not also a parameter of the write.
+    fields: emitSearch ? fields.filter((field) => field.inputType !== "search") : fields,
     buttons,
   };
   const extras: CapabilityObservation[] = [];
-  const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);
-  if (hasPrimary && kind !== "search" && !primaryIsExcluded && searchFields.length > 0) {
+  if (emitSearch) {
     extras.push({
       id: `search:${selector}`,
       kind: "search",
       selector: searchFields[0].selector,
       heading,
       method: "get",
-      actionLabel: searchFields[0].label ?? "Search",
+      actionLabel: clipTo(searchFields[0].label ?? "Search", LABEL_BUDGET),
       riskClass: "read",
       fields: searchFields,
       buttons: [],
@@ -562,8 +614,11 @@ function isNavigation(button: ButtonObservation): boolean {
 }
 
 /** Rows and cells that belong to this table, not to a table nested inside one of its cells. */
+/** Data rows the table owns; a tfoot row is a footer (often a pager), not data. */
 function ownedRows(table: Element): Element[] {
-  return [...table.querySelectorAll("tr")].filter((row) => row.closest("table") === table);
+  return [...table.querySelectorAll("tr")].filter(
+    (row) => row.closest("table") === table && row.parentElement?.tagName !== "TFOOT",
+  );
 }
 
 function ownedCells(row: Element, selector: string): Element[] {
@@ -613,11 +668,21 @@ function paginationScope(table: Element): Element[] {
 }
 
 function paginationFor(table: Element): TableObservation["pagination"] {
-  const links = paginationScope(table)
-    .flatMap((element) => [...(element.matches("a, button") ? [element] : []), ...element.querySelectorAll("a, button")])
-    .filter((link) => {
+  const ownFooterLinks = [...table.querySelectorAll("tfoot a, tfoot button, caption a, caption button")].filter(
+    (link) => link.closest("table") === table,
+  );
+  const links = [
+    ...ownFooterLinks,
+    ...paginationScope(table).flatMap((element) => [
+      ...(element.matches("a, button") ? [element] : []),
+      ...element.querySelectorAll("a, button"),
+    ]),
+  ].filter((link) => {
       const owner = link.closest("table");
-      return !owner || (owner !== table && !table.contains(owner));
+      if (!owner) return true;
+      const footer = link.closest("tfoot, caption");
+      if (owner === table && footer && table.contains(footer)) return true;
+      return owner !== table && !table.contains(owner);
     });
   const wording = (link: Element, pattern: RegExp) =>
     pattern.test(text(link).trim()) || pattern.test((link.getAttribute("aria-label") ?? "").trim());
