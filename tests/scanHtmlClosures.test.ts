@@ -388,3 +388,78 @@ describe("R34: a hidden heading does not shadow an earlier visible one", () => {
     expect(proposal.tools[0].name).toBe("read_invoices");
   });
 });
+
+describe("R35: a button-less form needs a real submission path, but an excluded one is still listed", () => {
+  it("proposes nothing for a two-field form with a search input and no button", async () => {
+    const scan = await scanOwner(`<form id="bs" method="post" action="/x"><input name="q" type="search" aria-label="Find"><input name="note" aria-label="Note"></form>`);
+    expect(scan.capabilities).toEqual([]);
+  });
+
+  it("lists a button-less credential form as excluded and still counts its controls", async () => {
+    const scan = await scanOwner(`<form id="pw" method="post" action="/login"><input name="user" aria-label="User"><input name="realm" aria-label="Realm"><input type="password" name="pw"><input type="hidden" name="csrf" value="t"></form>`);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Submit", "credential"]]);
+    expect(scan.safety.credentialFieldsExcluded).toBe(1);
+    expect(scan.safety.hiddenFieldsExcluded).toBe(1);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools).toEqual([]);
+    expect(proposal.excluded.map((e) => e.riskClass)).toEqual(["credential"]);
+  });
+
+  it("counts excluded controls of a dropped form", async () => {
+    const scan = await scanOwner(`<form id="d" method="post"><input name="a" aria-label="A"><input name="b" aria-label="B"><input type="hidden" name="csrf" value="t"></form>`);
+    expect(scan.capabilities).toEqual([]);
+    expect(scan.safety.hiddenFieldsExcluded).toBe(1);
+  });
+});
+
+describe("R36: implicit submission follows the HTML input-type list", () => {
+  it("skips textarea-only and select-only forms and keeps a single number field", async () => {
+    const textarea = await scanOwner(`<form id="t" method="post"><textarea name="body" aria-label="Body"></textarea></form>`);
+    const select = await scanOwner(`<form id="s" method="post"><select name="r" aria-label="R"><option value="a">a</option></select></form>`);
+    const number = await scanOwner(`<form id="n" method="post"><input type="number" name="qty" aria-label="Qty"></form>`);
+    expect(textarea.capabilities).toEqual([]);
+    expect(select.capabilities).toEqual([]);
+    expect(number.capabilities.map((c) => c.actionLabel)).toEqual(["Submit"]);
+    expect((await scanOwner(`<form id="x" method="post"><textarea name="body" aria-label="Body"></textarea><button>Post</button></form>`)).capabilities[0].fields[0].inputType).toBe("textarea");
+  });
+});
+
+describe("R37: titles are budgeted", () => {
+  it("clips a very long button label in the title but keeps the name within budget", async () => {
+    const label = "Send the completed application form to the regional office for review ".repeat(6);
+    const proposal = await inferGenericCapabilities(await scanOwner(`<form id="f" method="post"><input name="a" aria-label="A"><button>${label}</button></form>`));
+    expect(proposal.tools[0].title.length).toBeLessThanOrEqual(120);
+    expect(proposal.tools[0].name.length).toBeLessThanOrEqual(30);
+  });
+});
+
+describe("R38: links inside a table are never its pagers", () => {
+  it("ignores a Next link in a cell and a nested table's own pager", async () => {
+    const html = `<section><table id="outer"><thead><tr><th>A</th></tr></thead><tbody>
+<tr><td><a href="/item/1/next">Next</a></td></tr>
+<tr><td><table id="sub"><thead><tr><th>B</th></tr></thead><tbody><tr><td>x</td></tr></tbody></table><a href="?p=2" rel="next">Next</a></td></tr></tbody></table></section>`;
+    const scan = await scanOwner(html);
+    const flags = Object.fromEntries(scan.capabilities.map((c) => [c.selector, c.table?.pagination]));
+    expect(flags["#outer"]).toEqual({ previous: false, next: false });
+    expect(flags["#sub"]).toEqual({ previous: false, next: true });
+  });
+});
+
+describe("R39: a button holding only an image is labelled by the alt text", () => {
+  it("names the tool from the image alt", async () => {
+    const proposal = await inferGenericCapabilities(await scanOwner(`<form id="f" method="post" action="/s"><input name="msg" aria-label="Message"><button><img src="go.png" alt="Send"></button></form>`));
+    expect(proposal.tools.map((t) => [t.name, t.title])).toEqual([["send", "Send"]]);
+  });
+});
+
+describe("R40: tables under one heading carry an ordinal in their title", () => {
+  it("distinguishes the titles as well as the names", async () => {
+    const table = (id: string) => `<table id="${id}"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(`<h2>Levels</h2>${table("a")}${table("b")}${table("c")}`));
+    expect(proposal.tools.map((t) => [t.name, t.title])).toEqual([
+      ["read_levels", "Read Levels"],
+      ["read_levels_2", "Read Levels (2)"],
+      ["read_levels_3", "Read Levels (3)"],
+    ]);
+  });
+});

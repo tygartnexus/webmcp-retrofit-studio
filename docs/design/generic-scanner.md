@@ -81,7 +81,8 @@ which is neither direction. A lone table (no other table in its container
 apart from tables nested inside itself) sees its neighbouring siblings on
 both sides; between two tables a pager belongs to the table above it. The
 scan does not climb wrapper-only ancestors, so a pager placed beside an
-outer wrapper of a deeply nested table is not attributed to it.
+outer wrapper of a deeply nested table is not attributed to it, and links
+inside the table itself or inside a table nested in it are never pagers.
 
 Buttons: `type="button"` controls whose whole label is step-navigation
 wording (next, back, previous, continue, skip and their translations,
@@ -93,9 +94,15 @@ button's `formaction` and `formmethod` override the form's for that
 capability, including the first submit button. The primary action is the
 first submitting control (a submit button or an image button, labelled by
 its alt text, falling back to aria-label or title); a plain button never
-stands in for it, and a form with no submitting control has a default
-"Submit" action only when it could submit implicitly, that is with exactly
-one text-like field. A tool derived from a button never has an empty title. `input type="button"`
+stands in for it. A form with no submitting control has a default "Submit"
+action, and any embedded search, only when it could submit implicitly:
+exactly one field of an Enter-submitting input type (text, search, url,
+tel, email, password, date, month, week, time, datetime-local, number);
+selects and textareas do not count. A button-less form whose action is
+credential or finalize is still listed as excluded, and its controls still
+count in the safety envelope. A button holding only an image takes the
+image's alt text. Tool titles are clipped to 120 characters, and tables
+that share a heading carry an ordinal in their title. `input type="button"`
 counts like a `button type="button"`. A GET submit button keeps the form's
 search fields. Excluded controls are counted once per form even when
 several capabilities share the form's fields. A form inside a table row or a repeated container carries a row

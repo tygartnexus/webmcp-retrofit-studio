@@ -66,6 +66,7 @@ export interface GenericProposal {
 
 const INFERENCE_VERSION = "generic-inference-v2";
 const NAME_BUDGET = 30;
+const TITLE_BUDGET = 120;
 /** Room for `_NNN` so a suffixed name still fits the budget. */
 const SUFFIX_HEADROOM = 4;
 const MAX_NAME_SUFFIX = 999;
@@ -221,9 +222,13 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   const evidenceIds = [capability.id, ...capability.fields.filter((f) => !f.excluded).map((f) => f.id)];
   if (capability.kind === "table" && capability.table) {
     const noun = capability.heading;
+    const stem = stemFor("read_", noun, "read_", true);
+    const name = uniqueName(stem, taken);
+    // Several tables under one heading: the ordinal that made the name unique also marks the title.
+    const ordinal = name === budgetName(stem) ? "" : ` (${name.slice(name.lastIndexOf("_") + 1)})`;
     return {
-      name: uniqueName(stemFor("read_", noun, "read_", true), taken),
-      title: `Read ${noun}`,
+      name,
+      title: truncate(`Read ${noun}${ordinal}`, TITLE_BUDGET),
       description: truncate(`Read rows from the ${noun} table with paging. This tool does not modify state.`, DESCRIPTION_BUDGET),
       inputSchema: tableSchema(),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
@@ -238,7 +243,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
     const viaButton = capability.id.startsWith("action:") ? ` (${capability.actionLabel})` : "";
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
-      title: `Search ${noun}${viaButton}`,
+      title: truncate(`Search ${noun}${viaButton}`, TITLE_BUDGET),
       description: truncate(
         `Search ${noun} using the ${capability.heading} form${viaButton ? ` through its "${capability.actionLabel}" button` : ""}. This tool does not modify state.`,
         DESCRIPTION_BUDGET,
@@ -254,7 +259,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   const row = capability.rowLabel;
   return {
     name: uniqueName(stemFor("", row ? `${action} ${row}` : action, "write_"), taken),
-    title: row ? `${action}: ${row}` : action,
+    title: truncate(row ? `${action}: ${row}` : action, TITLE_BUDGET),
     description: truncate(
       row
         ? `Submit the "${action}" form for the "${row}" row on ${capability.heading}. This changes state and is staged for human review before anything final.`

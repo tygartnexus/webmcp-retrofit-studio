@@ -204,7 +204,8 @@ function controlSelector(control: Element, formSelector: string, inputType: stri
 }
 
 function observeField(control: Element, form: Element, formSelector: string, document: Document): FieldObservation | null {
-  const inputType = (control.getAttribute("type") ?? (control.tagName === "SELECT" ? "select" : "text")).toLowerCase();
+  const defaultType = control.tagName === "SELECT" ? "select" : control.tagName === "TEXTAREA" ? "textarea" : "text";
+  const inputType = (control.getAttribute("type") ?? defaultType).toLowerCase();
   if (inputType === "submit" || inputType === "button" || inputType === "reset" || inputType === "image") return null;
   const given = control.getAttribute("name") ?? control.getAttribute("id") ?? "";
   const excluded = exclusionFor(control, inputType, given);
@@ -367,6 +368,11 @@ function collapseRadioGroups(
 
 const BUTTON_SELECTOR = "button, input[type=submit], input[type=image], input[type=button]";
 
+/** Input types that submit a button-less form on Enter when they are its only such field (HTML implicit submission). */
+const IMPLICIT_SUBMIT_TYPES = new Set([
+  "text", "search", "url", "tel", "email", "password", "date", "month", "week", "time", "datetime-local", "number",
+]);
+
 /** A submit button or an image button submits the form; a plain button does not. */
 function isSubmitType(type: string): boolean {
   return type === "submit" || type === "image";
@@ -375,7 +381,9 @@ function isSubmitType(type: string): boolean {
 function buttonLabel(button: Element, type: string): string {
   const accessible = button.getAttribute("aria-label")?.trim() || button.getAttribute("title")?.trim();
   const fallback = type === "button" ? "Button" : "Submit";
-  if (button.tagName !== "INPUT") return text(button) || accessible || fallback;
+  if (button.tagName !== "INPUT") {
+    return text(button) || button.querySelector("img[alt]")?.getAttribute("alt")?.trim() || accessible || fallback;
+  }
   if (type === "image") return button.getAttribute("alt")?.trim() || accessible || "Submit";
   return button.getAttribute("value")?.trim() || accessible || fallback;
 }
@@ -477,7 +485,12 @@ function buttonCapability(
   };
 }
 
-function observeForm(form: Element, document: Document): CapabilityObservation[] {
+interface FormObservation {
+  capabilities: CapabilityObservation[];
+  fields: FieldObservation[];
+}
+
+function observeForm(form: Element, document: Document): FormObservation {
   const selector = selectorFor(form, document);
   const rowLabel = rowLabelFor(form);
   const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
@@ -502,8 +515,10 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   );
   const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
   // Without a submitting control a form only submits implicitly, and only with a single text-like field.
-  const textLike = fields.filter((field) => !field.excluded && field.inputType !== "checkbox" && field.inputType !== "radio");
-  const hasPrimary = submit !== undefined || textLike.length === 1;
+  // An excluded form is still listed even then, so the owner sees why nothing was proposed.
+  const textLike = fields.filter((field) => !field.excluded && IMPLICIT_SUBMIT_TYPES.has(field.inputType));
+  const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
+  const hasPrimary = submit !== undefined || textLike.length === 1 || primaryIsExcluded;
   const primary: CapabilityObservation = {
     id: `${kind}:${selector}`,
     kind,
@@ -519,8 +534,7 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   };
   const extras: CapabilityObservation[] = [];
   const searchFields = fields.filter((field) => field.inputType === "search" && !field.excluded);
-  const primaryIsExcluded = riskClass === "credential" || riskClass === "finalize";
-  if (kind !== "search" && !primaryIsExcluded && searchFields.length > 0) {
+  if (hasPrimary && kind !== "search" && !primaryIsExcluded && searchFields.length > 0) {
     extras.push({
       id: `search:${selector}`,
       kind: "search",
@@ -540,7 +554,7 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   for (const button of buttons.filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)) {
     extras.push(buttonCapability(button, base, method, form, fields));
   }
-  return hasPrimary ? [primary, ...extras] : extras;
+  return { capabilities: hasPrimary ? [primary, ...extras] : extras, fields };
 }
 
 function isNavigation(button: ButtonObservation): boolean {
@@ -599,10 +613,12 @@ function paginationScope(table: Element): Element[] {
 }
 
 function paginationFor(table: Element): TableObservation["pagination"] {
-  const links = paginationScope(table).flatMap((element) => [
-    ...(element.matches("a, button") ? [element] : []),
-    ...element.querySelectorAll("a, button"),
-  ]);
+  const links = paginationScope(table)
+    .flatMap((element) => [...(element.matches("a, button") ? [element] : []), ...element.querySelectorAll("a, button")])
+    .filter((link) => {
+      const owner = link.closest("table");
+      return !owner || (owner !== table && !table.contains(owner));
+    });
   const wording = (link: Element, pattern: RegExp) =>
     pattern.test(text(link).trim()) || pattern.test((link.getAttribute("aria-label") ?? "").trim());
   return {
@@ -656,13 +672,14 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
     const type = (button.getAttribute("type") ?? "submit").toLowerCase();
     return type === "button" && NAVIGATION_PATTERN.test(buttonLabel(button, type).trim());
   }).length;
-  const forms = [...document.querySelectorAll("form")].flatMap((form) => observeForm(form, document));
+  const observedForms = [...document.querySelectorAll("form")].map((form) => observeForm(form, document));
+  const forms = observedForms.flatMap((observed) => observed.capabilities);
   const tables = [...document.querySelectorAll("table")]
     .map((table) => observeTable(table, document))
     .filter((table): table is CapabilityObservation => table !== null);
   const capabilities = withUniqueIds([...forms, ...tables]);
-  // Button capabilities re-carry their form's fields; count each observed control once.
-  const allFields = [...new Map(capabilities.flatMap((capability) => capability.fields).map((field) => [field.id, field])).values()];
+  // Every observed control counts once, whether or not its form produced a capability.
+  const allFields = observedForms.flatMap((observed) => observed.fields);
 
   return deepFreeze({
     snapshotId: snapshot.id,
