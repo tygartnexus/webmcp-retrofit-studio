@@ -123,7 +123,8 @@ function nearestHeading(element: Element, document: Document): string {
   let best = "";
   for (const heading of headings) {
     const position = heading.compareDocumentPosition(element);
-    if (position & Node.DOCUMENT_POSITION_FOLLOWING) best = text(heading);
+    const label = text(heading);
+    if (label && position & Node.DOCUMENT_POSITION_FOLLOWING) best = label;
   }
   return best || text(document.querySelector("title")) || "Page";
 }
@@ -326,7 +327,7 @@ function collapseCheckboxGroups(fields: readonly FieldObservation[], formSelecto
     const merged: FieldObservation = {
       ...existing,
       required: existing.required || field.required,
-      options: [...(existing.options ?? []), ...(field.options ?? [])],
+      options: [...new Set([...(existing.options ?? []), ...(field.options ?? [])])],
     };
     groups.set(field.name, merged);
     collapsed[collapsed.indexOf(existing)] = merged;
@@ -356,7 +357,7 @@ function collapseRadioGroups(
     const merged: FieldObservation = {
       ...existing,
       required: existing.required || field.required,
-      options: [...(existing.options ?? []), ...(field.options ?? [])],
+      options: [...new Set([...(existing.options ?? []), ...(field.options ?? [])])],
     };
     groups.set(field.name, merged);
     collapsed[collapsed.indexOf(existing)] = merged;
@@ -372,9 +373,11 @@ function isSubmitType(type: string): boolean {
 }
 
 function buttonLabel(button: Element, type: string): string {
-  if (button.tagName !== "INPUT") return text(button);
-  if (type === "image") return button.getAttribute("alt")?.trim() || button.getAttribute("title")?.trim() || "Submit";
-  return button.getAttribute("value")?.trim() || (type === "button" ? "Button" : "Submit");
+  const accessible = button.getAttribute("aria-label")?.trim() || button.getAttribute("title")?.trim();
+  const fallback = type === "button" ? "Button" : "Submit";
+  if (button.tagName !== "INPUT") return text(button) || accessible || fallback;
+  if (type === "image") return button.getAttribute("alt")?.trim() || accessible || "Submit";
+  return button.getAttribute("value")?.trim() || accessible || fallback;
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
@@ -498,6 +501,9 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
     selector,
   );
   const { kind, riskClass } = classifyForm(primaryMethod, actionLabel, form, fields);
+  // Without a submitting control a form only submits implicitly, and only with a single text-like field.
+  const textLike = fields.filter((field) => !field.excluded && field.inputType !== "checkbox" && field.inputType !== "radio");
+  const hasPrimary = submit !== undefined || textLike.length === 1;
   const primary: CapabilityObservation = {
     id: `${kind}:${selector}`,
     kind,
@@ -534,18 +540,31 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   for (const button of buttons.filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)) {
     extras.push(buttonCapability(button, base, method, form, fields));
   }
-  return [primary, ...extras];
+  return hasPrimary ? [primary, ...extras] : extras;
 }
 
 function isNavigation(button: ButtonObservation): boolean {
   return NAVIGATION_PATTERN.test(button.label.trim());
 }
 
+/** Rows and cells that belong to this table, not to a table nested inside one of its cells. */
+function ownedRows(table: Element): Element[] {
+  return [...table.querySelectorAll("tr")].filter((row) => row.closest("table") === table);
+}
+
+function ownedCells(row: Element, selector: string): Element[] {
+  const table = row.closest("table");
+  return [...row.querySelectorAll(selector)].filter((cell) => cell.closest("table") === table);
+}
+
 /** thead cells, else the first row made only of th cells. */
 function headerCells(table: Element): string[] {
-  const fromHead = [...table.querySelectorAll("thead th")].map(text).filter(Boolean);
+  const fromHead = [...table.querySelectorAll("thead th")]
+    .filter((cell) => cell.closest("table") === table)
+    .map(text)
+    .filter(Boolean);
   if (fromHead.length > 0) return fromHead;
-  const headerRow = [...table.querySelectorAll("tr")].find(
+  const headerRow = ownedRows(table).find(
     (row) => row.children.length > 0 && [...row.children].every((cell) => cell.tagName === "TH"),
   );
   return headerRow ? [...headerRow.children].map(text).filter(Boolean) : [];
@@ -560,7 +579,7 @@ function headerCells(table: Element): string[] {
 function paginationScope(table: Element): Element[] {
   const parent = table.parentElement;
   if (!parent) return [];
-  const lone = parent.querySelectorAll("table").length <= 1;
+  const lone = [...parent.querySelectorAll("table")].every((other) => other === table || table.contains(other));
   const isRoot = parent === parent.ownerDocument.body || parent === parent.ownerDocument.documentElement;
   if (lone && !isRoot) return [parent];
   const scope: Element[] = [];
@@ -596,7 +615,7 @@ function observeTable(table: Element, document: Document): CapabilityObservation
   const headers = headerCells(table);
   if (headers.length === 0) return null;
   const selector = selectorFor(table, document);
-  const rowCount = [...table.querySelectorAll("tr")].filter((row) => row.querySelector("td")).length;
+  const rowCount = ownedRows(table).filter((row) => ownedCells(row, "td").length > 0).length;
   const { previous, next } = paginationFor(table);
   return {
     id: `table:${selector}`,

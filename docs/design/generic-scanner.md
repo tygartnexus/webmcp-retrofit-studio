@@ -61,23 +61,27 @@ and select options. Field values are never read. Same-name radios collapse
 into one enum field; two or more same-name checkboxes collapse into one
 multi-select enum field whose value is an array of option keys, labelled by
 the fieldset legend. A lone checkbox stays boolean; a checkbox without a value attribute has the
-option key "on", as the browser would submit, and an empty value attribute
-is the empty key. Repeated names inside one
+option key "on", as the browser would submit, an empty value attribute is
+the empty key, and repeated keys within a group are listed once. Repeated names inside one
 form get numeric suffixes so schema keys stay distinct. A control with no
 name and no id can never be a parameter, but when it is a password, hidden,
 file, or payment control it is still recorded as excluded, so it still
 counts in the envelope and still classifies its form.
 
 Tables: the header comes from `thead` cells, else the first row made only of
-`th` cells; a table with neither is not modelled. Pagination is read from
+`th` cells; a table with neither is not modelled. A table owns only the rows
+and cells outside any table nested in its cells, in the scan, the runtime,
+and the embed alike. Pagination is read from
 the table's own neighbourhood (its container when it holds one table,
 otherwise the siblings up to the next table) and only from links with
 `rel="prev"`/`rel="next"` or whose whole text is previous/next wording
 ("Next page", "Zurück"); never from "the first link", never from a
 "Back to dashboard" style link, and never from a bare page number ("Page 2"),
-which is neither direction. A lone table (no other table anywhere in its
-container) sees its neighbouring siblings on both sides; between two tables
-a pager belongs to the table above it.
+which is neither direction. A lone table (no other table in its container
+apart from tables nested inside itself) sees its neighbouring siblings on
+both sides; between two tables a pager belongs to the table above it. The
+scan does not climb wrapper-only ancestors, so a pager placed beside an
+outer wrapper of a deeply nested table is not attributed to it.
 
 Buttons: `type="button"` controls whose whole label is step-navigation
 wording (next, back, previous, continue, skip and their translations,
@@ -88,8 +92,10 @@ become their own capability, classified by their own label, and a submit
 button's `formaction` and `formmethod` override the form's for that
 capability, including the first submit button. The primary action is the
 first submitting control (a submit button or an image button, labelled by
-its alt text); a plain button never stands in for it, and a form with no
-submitting control keeps the default "Submit" action. `input type="button"`
+its alt text, falling back to aria-label or title); a plain button never
+stands in for it, and a form with no submitting control has a default
+"Submit" action only when it could submit implicitly, that is with exactly
+one text-like field. A tool derived from a button never has an empty title. `input type="button"`
 counts like a `button type="button"`. A GET submit button keeps the form's
 search fields. Excluded controls are counted once per form even when
 several capabilities share the form's fields. A form inside a table row or a repeated container carries a row
@@ -160,7 +166,9 @@ the row label into name, title, and description; every description,
 including search and table descriptions built from a heading, is clipped to
 the lint budget. Read-only names never carry write words, whatever the
 page heading said ("Orders to cancel" reads as `read_orders_to`). A search
-tool whose only label is the word "Search" is named after its heading. A label with no Latin
+tool whose only label is the word "Search" is named after its heading, and a
+search derived from a submit button names that button in its title and
+description so it never reads like the form's own search. A label with no Latin
 letters gets a deterministic stem from a short hash of the label
 (`write_1a2b3c`, `search_…`, `read_…`); the original-script label stays in
 the title and description. Schemas set

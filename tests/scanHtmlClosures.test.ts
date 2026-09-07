@@ -1,0 +1,390 @@
+import { inferGenericCapabilities } from "../src/discovery/inferGenericCapabilities";
+import { buildGenericExportBundle } from "../src/export/buildGenericExportBundle";
+import { scanHtml } from "../src/discovery/scanHtml";
+import { createOwnerSnapshot } from "../src/fixtures/ownerSnapshot";
+import { createGenericToolDefinitions } from "../src/runtime/genericRuntime";
+import { sampleToolInput } from "../src/runtime/sampleInput";
+import { runGenericChecks } from "../src/validation/runGenericChecks";
+
+/**
+ * Regressions R12 onward from the 2026-09-07 review and QA rounds: button
+ * model, checkbox groups, hidden text, pagination, and table ownership.
+ */
+
+function host(html: string): Document {
+  return new DOMParser().parseFromString(html, "text/html");
+}
+
+
+async function scanOwner(html: string) {
+  return scanHtml(await createOwnerSnapshot(html, { fallbackTitle: "QA page" }));
+}
+
+async function embedTools(html: string, snapshotTitle = "Embed") {
+  const snapshot = await createOwnerSnapshot(html, { fallbackTitle: snapshotTitle });
+  const scan = await scanHtml(snapshot);
+  const proposal = await inferGenericCapabilities(scan);
+  const validation = await runGenericChecks({ snapshot, scan, proposal });
+  const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+  const embed = bundle.files.find((file) => file.path === "webmcp-retrofit.generated.js")!.content;
+  const registered = new Map<string, WebMCP.ModelContextTool>();
+  Object.defineProperty(document, "modelContext", {
+    configurable: true,
+    value: { registerTool: (tool: WebMCP.ModelContextTool) => registered.set(tool.name, tool) },
+  });
+  document.body.innerHTML = new DOMParser().parseFromString(html, "text/html").body.innerHTML;
+  new Function(embed)();
+  return { scan, proposal, validation, registered, dispose: () => Reflect.deleteProperty(document, "modelContext") };
+}
+
+describe("R12: a value-less checkbox first in its group can be checked", () => {
+  it("checks the 'on' box in the studio runtime and the embed", async () => {
+    const html = `<form id="g" method="post" action="/g"><fieldset><legend>Extras</legend><label><input type="checkbox" name="i"> Plain</label><label><input type="checkbox" name="i" value="a"> A</label></fieldset><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields[0].options).toEqual(["on", "a"]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(sampleToolInput(proposal.tools[0].inputSchema)).toEqual({ i: ["on"] });
+    const page = host(html);
+    const [save] = createGenericToolDefinitions({ hostDocument: page, scan, proposal, modelContext: undefined });
+    save.execute({ i: ["on"] }, { signal: new AbortController().signal });
+    expect([...page.querySelectorAll('[name="i"]')].map((box) => (box as HTMLInputElement).checked)).toEqual([true, false]);
+
+    const { registered, dispose } = await embedTools(html);
+    try {
+      registered.get("save")!.execute({ i: ["on"] }, { signal: new AbortController().signal });
+      expect([...document.querySelectorAll('[name="i"]')].map((box) => (box as HTMLInputElement).checked)).toEqual([true, false]);
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("R13: the first submit button honours its own formaction and formmethod", () => {
+  it("stages the primary submit to its formaction and classifies a GET preview submit as read", async () => {
+    const html = `<title>Orders</title><form id="o" method="post" action="/orders/save"><label for="n">Note</label><input id="n" name="note">
+<button type="submit" formaction="/orders/archive">Archive</button><button type="submit">Save draft</button>
+<button type="submit" formmethod="get" formaction="/orders/preview">Show preview</button></form>`;
+    const scan = await scanOwner(html);
+    const caps = scan.capabilities.map((c) => [c.actionLabel, c.kind, c.riskClass, c.method, c.action ?? null]);
+    expect(caps).toEqual([
+      ["Archive", "form", "write", "post", "/orders/archive"],
+      ["Save draft", "form", "write", "post", null],
+      ["Show preview", "search", "read", "get", "/orders/preview"],
+    ]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => [t.name, t.riskClass])).toEqual([
+      ["archive", "write"],
+      ["save_draft", "write"],
+      ["search_preview", "read"],
+    ]);
+    const staged: { toolName: string; action: string | null }[] = [];
+    const tools = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined, onStaged: (c) => staged.push(c) });
+    tools[0].execute({ note: "x" }, { signal: new AbortController().signal });
+    tools[1].execute({ note: "x" }, { signal: new AbortController().signal });
+    const preview = tools[2].execute({ note: "x" }, { signal: new AbortController().signal }) as { request: { action: string | null } };
+    expect(staged.map((c) => [c.toolName, c.action])).toEqual([
+      ["archive", "/orders/archive"],
+      ["save_draft", "/orders/save"],
+    ]);
+    expect(preview.request.action).toBe("/orders/preview");
+  });
+});
+
+describe("R14: a bare page number is neither previous nor next", () => {
+  it("ignores 'Page 2' links for pagination but still skips a 'Page 2' wizard button", async () => {
+    const html = `<section><table id="t"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table><nav><a href="?p=1">Page 1</a><a href="?p=2">Page 2</a></nav></section>
+<form id="w" method="post"><input name="a" aria-label="A"><button type="button">Page 2</button><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.find((c) => c.kind === "table")?.table?.pagination).toEqual({ previous: false, next: false });
+    expect(scan.safety.navigationButtonsSkipped).toBe(1);
+  });
+});
+
+describe("R15: textarea content and hiding classes are not visible text", () => {
+  it("keeps them out of row labels", async () => {
+    const html = `<table id="t"><thead><tr><th>Name</th><th></th></tr></thead><tbody><tr><td><span class="sr-only">internal-ref-77</span><textarea>draft text</textarea>Alice</td><td><form method="post" action="/e/1"><input name="role" aria-label="Role"><button>Edit</button></form></td></tr></tbody></table>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.find((c) => c.kind === "form")?.rowLabel).toBe("Alice");
+  });
+});
+
+describe("R16: excluded controls are counted once per form", () => {
+  it("does not multiply counts by the number of button capabilities", async () => {
+    const html = `<form id="w" method="post" action="/w"><input type="hidden" name="csrf" value="t"><input type="password" name="pw"><input name="a" aria-label="A">
+<button type="button">Review answers</button><button type="button">Check totals</button><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.safety.hiddenFieldsExcluded).toBe(1);
+    expect(scan.safety.credentialFieldsExcluded).toBe(1);
+  });
+});
+
+describe("R17: read and search descriptions are clipped to the lint budget", () => {
+  it("exports a page with a very long heading", async () => {
+    const heading = "H".repeat(600);
+    const html = `<h2>${heading}</h2><form method="get" action="/s"><input name="q" type="search" aria-label="Find entries"><button>Search</button></form>
+<h2>${heading} table</h2><table id="t"><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    for (const tool of proposal.tools) expect(tool.description.length).toBeLessThanOrEqual(500);
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    await expect(buildGenericExportBundle({ snapshot, scan, proposal, validation })).resolves.toBeTruthy();
+  });
+});
+
+describe("R18: a repeated block's heading must sit outside its form", () => {
+  it("takes the paragraph, not a strong element inside the form", async () => {
+    const html = `<ul><li><p>Widget A</p><form method="post" action="/a"><strong>Danger zone</strong><input name="q" aria-label="Q"><button>Update</button></form></li><li><p>Widget B</p><form method="post" action="/b"><strong>Danger zone</strong><input name="q" aria-label="Q"><button>Update</button></form></li></ul>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.rowLabel)).toEqual(["Widget A", "Widget B"]);
+  });
+});
+
+describe("R19: a root-level table sees pager links on both sides", () => {
+  it("reads a previous link before the table and a next link after it", async () => {
+    const html = `<a href="?p=1">Previous</a><table id="t"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table><a href="?p=3">Next</a>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].table?.pagination).toEqual({ previous: true, next: true });
+  });
+});
+
+describe("R20: group selectors never catch a same-name text control", () => {
+  it("addresses radios by type and leaves the text input untouched", async () => {
+    const html = `<form id="m" method="post"><label for="k">Kind text</label><input id="k" name="kind"><fieldset><legend>Kind</legend><label><input type="radio" name="kind" value="a"> A</label><label><input type="radio" name="kind" value="b"> B</label></fieldset><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    const page = host(html);
+    const radios = scan.capabilities[0].fields.find((f) => f.inputType === "radio")!;
+    expect(radios.selector).toBe(`#m input[type="radio"][name="kind"]`);
+    expect(page.querySelectorAll(radios.selector)).toHaveLength(2);
+    const proposal = await inferGenericCapabilities(scan);
+    const [save] = createGenericToolDefinitions({ hostDocument: page, scan, proposal, modelContext: undefined });
+    save.execute({ kind: "text", kind_2: "b" }, { signal: new AbortController().signal });
+    expect((page.querySelector("#k") as HTMLInputElement).value).toBe("text");
+    expect((page.querySelector('input[type="radio"][value="b"]') as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe("R21: a too-wide table fails only the output-budget check", () => {
+  it("does not blame the no-submit check", async () => {
+    const cells = Array.from({ length: 400 }, (_, i) => `<td>c${i}</td>`).join("");
+    const html = `<h2>Huge</h2><table id="h"><thead><tr>${"<th>H</th>".repeat(400)}</tr></thead><tbody><tr>${cells}</tr></tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+    const report = await runGenericChecks({ snapshot, scan, proposal });
+    expect(report.checks.filter((c) => c.status === "failed").map((c) => c.id)).toEqual(["output-budget"]);
+    expect(report.checks.find((c) => c.id === "output-budget")?.detail).toMatch(/too many columns/);
+  });
+});
+
+describe("R22: an image submit button is labelled by its alt text", () => {
+  it("names the tool from the alt attribute", async () => {
+    const html = `<form id="i" method="post" action="/send"><input name="msg" aria-label="Message"><input type="image" src="go.png" alt="Send it"></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].actionLabel).toBe("Send it");
+    expect((await inferGenericCapabilities(scan)).tools[0].name).toBe("send_it");
+  });
+});
+
+describe("R23: the primary action is the first submitting control", () => {
+  it("keeps an image submit that follows a plain button, and never doubles the plain button", async () => {
+    const html = `<form id="f" method="post" action="/send"><input name="msg" aria-label="Message"><button type="button">Review answers</button><input type="image" src="go.png" alt="Send it"></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Send it", "Review answers"]);
+    expect((await inferGenericCapabilities(scan)).tools.map((t) => t.name)).toEqual(["send_it", "review_answers"]);
+  });
+
+  it("gives a form with only a plain button the default Submit action plus the button", async () => {
+    const html = `<form id="f" method="post" action="/x"><input name="a" aria-label="A"><button type="button">Review answers</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.id.split(":")[0]])).toEqual([
+      ["Submit", "form"],
+      ["Review answers", "action"],
+    ]);
+  });
+
+  it("models a second image submit with its own formaction", async () => {
+    const html = `<form id="f" method="post" action="/now"><input name="msg" aria-label="Message"><input type="image" src="a.png" alt="Send it"><input type="image" src="b.png" alt="Send later" formaction="/later"></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.action ?? null])).toEqual([
+      ["Send it", null],
+      ["Send later", "/later"],
+    ]);
+  });
+});
+
+describe("R24: hidden text never reaches names, descriptions, or the export", () => {
+  it("ignores hidden spans in headings, button labels, legends, and labels", async () => {
+    const html = `<h2>Orders <span class="sr-only">ref-991-secret</span></h2>
+<table id="t"><thead><tr><th>Id</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<form id="f" method="post" action="/x"><fieldset><legend>Kind <span hidden>legend-secret</span></legend>
+<label><input type="radio" name="kind" value="a"> A</label><label><input type="radio" name="kind" value="b"> B</label></fieldset>
+<label for="n">Name <span aria-hidden="true">label-secret</span></label><input id="n" name="name">
+<button>Save<span hidden>token-abc</span></button></form>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+
+    expect(proposal.tools.map((t) => t.name)).toEqual(["save", "read_orders"]);
+    expect(proposal.tools[0].inputSchema.properties.kind.description).toBe("Kind");
+    expect(proposal.tools[0].inputSchema.properties.name.description).toBe("Name");
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    for (const file of bundle.files) {
+      for (const secret of ["ref-991-secret", "legend-secret", "label-secret", "token-abc"]) {
+        expect(file.content, `${file.path} ${secret}`).not.toContain(secret);
+      }
+    }
+  });
+});
+
+describe("R25: a table with another table nested in a sibling is not lone", () => {
+  it("leaves the nested table's pager to the nested table", async () => {
+    const html = `<section><table id="a"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<div><table id="b"><thead><tr><th>Y</th></tr></thead><tbody><tr><td>2</td></tr></tbody></table><a href="?p=2" rel="next">Next</a></div></section>`;
+    const scan = await scanOwner(html);
+    const flags = Object.fromEntries(scan.capabilities.map((c) => [c.selector, c.table?.pagination]));
+    expect(flags["#a"]).toEqual({ previous: false, next: false });
+    expect(flags["#b"]).toEqual({ previous: false, next: true });
+  });
+});
+
+describe("R26: an empty value attribute is the empty key", () => {
+  it("keys value='' as '' and applies it", async () => {
+    const html = `<form id="g" method="post"><label><input type="checkbox" name="i" value=""> Blank</label><label><input type="checkbox" name="i" value="a"> A</label><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields[0].options).toEqual(["", "a"]);
+    const proposal = await inferGenericCapabilities(scan);
+    const page = host(html);
+    const [save] = createGenericToolDefinitions({ hostDocument: page, scan, proposal, modelContext: undefined });
+    save.execute({ i: [""] }, { signal: new AbortController().signal });
+    expect([...page.querySelectorAll('[name="i"]')].map((box) => (box as HTMLInputElement).checked)).toEqual([true, false]);
+  });
+});
+
+describe("R27: input type=button behaves like button type=button", () => {
+  it("becomes an action or a skipped navigation control by its value", async () => {
+    const html = `<form id="w" method="post"><input name="a" aria-label="A"><input type="button" value="Review answers"><input type="button" value="Next"><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Save", "Review answers"]);
+    expect(scan.safety.navigationButtonsSkipped).toBe(1);
+  });
+});
+
+describe("R28: plain buttons ignore formmethod, and GET submits keep search fields", () => {
+  it("does not turn a plain button with formmethod=get into a read tool", async () => {
+    const html = `<form id="p" method="post" action="/p"><input name="note" aria-label="Note"><button type="button" formmethod="get" formaction="/preview">Show preview</button><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.kind, c.riskClass, c.method, c.action ?? null])).toEqual([
+      ["Save", "form", "write", "post", null],
+      ["Show preview", "form", "write", "post", null],
+    ]);
+  });
+
+  it("names a GET results submit after the button and keeps the search field", async () => {
+    const html = `<h1>Orders</h1><form id="o" method="post" action="/save"><input name="q" type="search" aria-label="Find orders"><input name="note" aria-label="Note"><button>Save</button><button type="submit" formmethod="get" formaction="/results">Show results</button></form>`;
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    const tools = proposal.tools.map((t) => [t.name, Object.keys(t.inputSchema.properties)]);
+    expect(tools).toEqual([
+      ["save", ["q", "note"]],
+      ["search_orders", ["q"]],
+      ["search_results", ["q", "note"]],
+    ]);
+  });
+});
+
+describe("R29: a table owns only its own rows and cells", () => {
+  it("keeps a nested table's headers and rows out of the outer table, in scan, runtime, and embed", async () => {
+    const html = `<h2>Grid</h2><table id="outer"><thead><tr><th>Name</th><th>Actions</th></tr></thead><tbody>
+<tr><td>Ann</td><td><form method="post" action="/save"><table id="inner"><thead><tr><th>K</th></tr></thead><tbody><tr><td>v1</td></tr><tr><td>v2</td></tr></tbody></table><input name="note" aria-label="Note"><button>Save</button></form></td></tr>
+<tr><td>Bob</td><td>none</td></tr></tbody></table>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const outer = scan.capabilities.find((c) => c.selector === "#outer")!;
+    const inner = scan.capabilities.find((c) => c.selector === "#inner")!;
+
+    expect(outer.table).toMatchObject({ headers: ["Name", "Actions"], rowCount: 2 });
+    expect(inner.table).toMatchObject({ headers: ["K"], rowCount: 2 });
+    expect(outer.table?.pagination).toEqual({ previous: false, next: false });
+
+    const proposal = await inferGenericCapabilities(scan);
+    const tools = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined });
+    const readOuter = tools.find((t) => t.name === "read_grid")!;
+    const rows = (readOuter.execute({}, { signal: new AbortController().signal }) as { rows: string[][] }).rows;
+    expect(rows).toEqual([
+      ["Ann", "Kv1v2Save"],
+      ["Bob", "none"],
+    ]);
+
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const { registered, dispose } = await embedTools(html);
+    try {
+      const shipped = registered.get("read_grid")!.execute({}, { signal: new AbortController().signal }) as { rows: string[][] };
+      expect(shipped.rows).toEqual(rows);
+    } finally {
+      dispose();
+    }
+  });
+
+  it("keeps the outer table's pager when a sub-table sits in one of its cells", async () => {
+    const html = `<section><a href="?p=1" rel="prev">Previous</a><table id="outer"><thead><tr><th>A</th></tr></thead><tbody><tr><td><table id="sub"><thead><tr><th>B</th></tr></thead><tbody><tr><td>x</td></tr></tbody></table></td></tr></tbody></table></section>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.find((c) => c.selector === "#outer")?.table?.pagination).toEqual({ previous: true, next: false });
+  });
+});
+
+describe("R30: button labels fall back to aria-label and title, and titles are never empty", () => {
+  it("labels an icon button from its aria-label", async () => {
+    const html = `<form id="f" method="post" action="/d"><input name="a" aria-label="A"><button aria-label="Save draft"><span hidden>icon</span></button><input type="button" value="" title="Check totals"></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Save draft", "Check totals"]);
+    const proposal = await inferGenericCapabilities(scan);
+    expect(proposal.tools.map((t) => [t.name, t.title])).toEqual([
+      ["save_draft", "Save draft"],
+      ["check_totals", "Check totals"],
+    ]);
+    for (const tool of proposal.tools) expect(tool.title.length).toBeGreaterThan(0);
+  });
+});
+
+describe("R31: the default Submit action exists only where implicit submission applies", () => {
+  it("omits it for a multi-field form with only plain buttons and keeps it for a single field", async () => {
+    const multi = await scanOwner(`<form id="m" method="post"><input name="a" aria-label="A"><input name="b" aria-label="B"><button type="button">Review</button></form>`);
+    expect(multi.capabilities.map((c) => c.actionLabel)).toEqual(["Review"]);
+    const single = await scanOwner(`<form id="s" method="get" action="/q"><input name="q" type="search" aria-label="Find"></form>`);
+    expect(single.capabilities.map((c) => [c.actionLabel, c.kind])).toEqual([["Submit", "search"]]);
+  });
+});
+
+describe("R32: checkbox option keys are unique within a group", () => {
+  it("lists a repeated value once", async () => {
+    const html = `<form id="g" method="post"><label><input type="checkbox" name="i" value="x"> One</label><label><input type="checkbox" name="i" value="x"> Two</label><label><input type="checkbox" name="i" value="y"> Y</label><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields[0].options).toEqual(["x", "y"]);
+  });
+});
+
+describe("R33: a button-derived search names its button in the title", () => {
+  it("distinguishes it from the form's own search", async () => {
+    const html = `<h1>Orders</h1><form id="o" method="post" action="/save"><label for="q">Orders</label><input id="q" name="q" type="search"><button>Save</button><button type="submit" formmethod="get" formaction="/find">Orders</button></form>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(html));
+    const searches = proposal.tools.filter((t) => t.riskClass === "read").map((t) => [t.name, t.title]);
+    expect(searches).toEqual([
+      ["search_orders", "Search Orders"],
+      ["search_orders_2", "Search Orders (Orders)"],
+    ]);
+    expect(proposal.tools[2].description).toContain(`through its "Orders" button`);
+  });
+});
+
+describe("R34: a hidden heading does not shadow an earlier visible one", () => {
+  it("names the table after the visible heading", async () => {
+    const html = `<title>Ledger</title><h1>Invoices</h1><h2 hidden>SECRET-HEAD</h2><table id="t"><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+    const proposal = await inferGenericCapabilities(await scanOwner(html));
+    expect(proposal.tools[0].name).toBe("read_invoices");
+  });
+});

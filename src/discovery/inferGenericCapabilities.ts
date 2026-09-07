@@ -235,10 +235,14 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
   }
   if (capability.kind === "search") {
     const noun = objectNoun(capability);
+    const viaButton = capability.id.startsWith("action:") ? ` (${capability.actionLabel})` : "";
     return {
       name: uniqueName(stemFor("search_", noun, "search_", true), taken),
-      title: `Search ${noun}`,
-      description: truncate(`Search ${noun} using the ${capability.heading} form. This tool does not modify state.`, DESCRIPTION_BUDGET),
+      title: `Search ${noun}${viaButton}`,
+      description: truncate(
+        `Search ${noun} using the ${capability.heading} form${viaButton ? ` through its "${capability.actionLabel}" button` : ""}. This tool does not modify state.`,
+        DESCRIPTION_BUDGET,
+      ),
       inputSchema: schemaFromFields(capability.fields),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       riskClass: "read",
@@ -246,7 +250,7 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>): Pro
       evidenceIds,
     };
   }
-  const action = capability.actionLabel;
+  const action = capability.actionLabel || "Submit";
   const row = capability.rowLabel;
   return {
     name: uniqueName(stemFor("", row ? `${action} ${row}` : action, "write_"), taken),

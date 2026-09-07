@@ -245,11 +245,14 @@ const EMBED_RUNTIME = String.raw`
   function readTable(binding, values) {
     var table = document.querySelector(binding.selector);
     if (!table) throw new Error("The bound table is missing from the page");
-    var rows = Array.prototype.filter.call(table.querySelectorAll("tr"), function (row) { return row.querySelector("td"); });
+    var owned = function (node) { return node.closest("table") === table; };
+    var rows = Array.prototype.filter.call(table.querySelectorAll("tr"), function (row) {
+      return owned(row) && Array.prototype.some.call(row.querySelectorAll("td"), owned);
+    });
     var page = typeof values.page === "number" ? values.page : 1, limit = typeof values.limit === "number" ? values.limit : 25;
     var start = (page - 1) * limit;
     var raw = rows.slice(start, start + limit).map(function (row) {
-      return Array.prototype.map.call(row.querySelectorAll("td"), function (cell) { return (cell.textContent || "").replace(/\s+/g, " ").trim(); });
+      return Array.prototype.filter.call(row.querySelectorAll("td"), owned).map(function (cell) { return (cell.textContent || "").replace(/\s+/g, " ").trim(); });
     });
     var cellBudget = CELL_BUDGET;
     var clipRows = function () { return raw.map(function (row) { return row.map(function (cell) { return clipCell(cell, cellBudget); }); }); };

@@ -145,10 +145,11 @@ function targetFor(host: Document, capability: CapabilityObservation, toolName: 
 function readTable(host: Document, capability: CapabilityObservation, page: number, limit: number): TableReadOutput {
   const table = host.querySelector(capability.selector);
   if (!table) throw new Error("The bound table is missing from the page");
-  const allRows = [...table.querySelectorAll("tr")].filter((row) => row.querySelector("td"));
+  const owned = (node: Element) => node.closest("table") === table;
+  const allRows = [...table.querySelectorAll("tr")].filter((row) => owned(row) && [...row.querySelectorAll("td")].some(owned));
   const columns = capability.table?.headers ?? [];
   const start = (page - 1) * limit;
-  const rawRows = allRows.slice(start, start + limit).map((row) => [...row.querySelectorAll("td")].map(cellText));
+  const rawRows = allRows.slice(start, start + limit).map((row) => [...row.querySelectorAll("td")].filter(owned).map(cellText));
   let cellBudget = CELL_BUDGET_CHARS;
   const clipRows = () => rawRows.map((row) => row.map((cell) => clipCell(cell, cellBudget)));
   let rows = clipRows();
