@@ -235,7 +235,7 @@ const EMBED_RUNTIME = String.raw`
         if (field.inputType === "radio") control.checked = control.getAttribute("value") === String(value);
         else if (field.inputType === "checkbox") {
           control.checked = field.multiple
-            ? Array.isArray(value) && value.indexOf(control.getAttribute("value") || "on") >= 0
+            ? Array.isArray(value) && value.indexOf(control.getAttribute("value") === null ? "on" : control.getAttribute("value")) >= 0
             : Boolean(value);
         } else control.value = String(value);
       }

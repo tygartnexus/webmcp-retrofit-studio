@@ -792,7 +792,7 @@ describe("R13: the first submit button honours its own formaction and formmethod
     expect(proposal.tools.map((t) => [t.name, t.riskClass])).toEqual([
       ["archive", "write"],
       ["save_draft", "write"],
-      ["search_orders", "read"],
+      ["search_preview", "read"],
     ]);
     const staged: { toolName: string; action: string | null }[] = [];
     const tools = createGenericToolDefinitions({ hostDocument: host(html), scan, proposal, modelContext: undefined, onStaged: (c) => staged.push(c) });
@@ -901,5 +901,114 @@ describe("R22: an image submit button is labelled by its alt text", () => {
     const scan = await scanOwner(html);
     expect(scan.capabilities[0].actionLabel).toBe("Send it");
     expect((await inferGenericCapabilities(scan)).tools[0].name).toBe("send_it");
+  });
+});
+
+describe("R23: the primary action is the first submitting control", () => {
+  it("keeps an image submit that follows a plain button, and never doubles the plain button", async () => {
+    const html = `<form id="f" method="post" action="/send"><input name="msg" aria-label="Message"><button type="button">Review answers</button><input type="image" src="go.png" alt="Send it"></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Send it", "Review answers"]);
+    expect((await inferGenericCapabilities(scan)).tools.map((t) => t.name)).toEqual(["send_it", "review_answers"]);
+  });
+
+  it("gives a form with only a plain button the default Submit action plus the button", async () => {
+    const html = `<form id="f" method="post" action="/x"><input name="a" aria-label="A"><button type="button">Review answers</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.id.split(":")[0]])).toEqual([
+      ["Submit", "form"],
+      ["Review answers", "action"],
+    ]);
+  });
+
+  it("models a second image submit with its own formaction", async () => {
+    const html = `<form id="f" method="post" action="/now"><input name="msg" aria-label="Message"><input type="image" src="a.png" alt="Send it"><input type="image" src="b.png" alt="Send later" formaction="/later"></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.action ?? null])).toEqual([
+      ["Send it", null],
+      ["Send later", "/later"],
+    ]);
+  });
+});
+
+describe("R24: hidden text never reaches names, descriptions, or the export", () => {
+  it("ignores hidden spans in headings, button labels, legends, and labels", async () => {
+    const html = `<h2>Orders <span class="sr-only">ref-991-secret</span></h2>
+<table id="t"><thead><tr><th>Id</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<form id="f" method="post" action="/x"><fieldset><legend>Kind <span hidden>legend-secret</span></legend>
+<label><input type="radio" name="kind" value="a"> A</label><label><input type="radio" name="kind" value="b"> B</label></fieldset>
+<label for="n">Name <span aria-hidden="true">label-secret</span></label><input id="n" name="name">
+<button>Save<span hidden>token-abc</span></button></form>`;
+    const snapshot = await createOwnerSnapshot(html);
+    const scan = await scanHtml(snapshot);
+    const proposal = await inferGenericCapabilities(scan);
+
+    expect(proposal.tools.map((t) => t.name)).toEqual(["save", "read_orders"]);
+    expect(proposal.tools[0].inputSchema.properties.kind.description).toBe("Kind");
+    expect(proposal.tools[0].inputSchema.properties.name.description).toBe("Name");
+    const validation = await runGenericChecks({ snapshot, scan, proposal });
+    expect(validation.passed).toBe(10);
+    const bundle = await buildGenericExportBundle({ snapshot, scan, proposal, validation });
+    for (const file of bundle.files) {
+      for (const secret of ["ref-991-secret", "legend-secret", "label-secret", "token-abc"]) {
+        expect(file.content, `${file.path} ${secret}`).not.toContain(secret);
+      }
+    }
+  });
+});
+
+describe("R25: a table with another table nested in a sibling is not lone", () => {
+  it("leaves the nested table's pager to the nested table", async () => {
+    const html = `<section><table id="a"><thead><tr><th>X</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>
+<div><table id="b"><thead><tr><th>Y</th></tr></thead><tbody><tr><td>2</td></tr></tbody></table><a href="?p=2" rel="next">Next</a></div></section>`;
+    const scan = await scanOwner(html);
+    const flags = Object.fromEntries(scan.capabilities.map((c) => [c.selector, c.table?.pagination]));
+    expect(flags["#a"]).toEqual({ previous: false, next: false });
+    expect(flags["#b"]).toEqual({ previous: false, next: true });
+  });
+});
+
+describe("R26: an empty value attribute is the empty key", () => {
+  it("keys value='' as '' and applies it", async () => {
+    const html = `<form id="g" method="post"><label><input type="checkbox" name="i" value=""> Blank</label><label><input type="checkbox" name="i" value="a"> A</label><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities[0].fields[0].options).toEqual(["", "a"]);
+    const proposal = await inferGenericCapabilities(scan);
+    const page = host(html);
+    const [save] = createGenericToolDefinitions({ hostDocument: page, scan, proposal, modelContext: undefined });
+    save.execute({ i: [""] }, { signal: new AbortController().signal });
+    expect([...page.querySelectorAll('[name="i"]')].map((box) => (box as HTMLInputElement).checked)).toEqual([true, false]);
+  });
+});
+
+describe("R27: input type=button behaves like button type=button", () => {
+  it("becomes an action or a skipped navigation control by its value", async () => {
+    const html = `<form id="w" method="post"><input name="a" aria-label="A"><input type="button" value="Review answers"><input type="button" value="Next"><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => c.actionLabel)).toEqual(["Save", "Review answers"]);
+    expect(scan.safety.navigationButtonsSkipped).toBe(1);
+  });
+});
+
+describe("R28: plain buttons ignore formmethod, and GET submits keep search fields", () => {
+  it("does not turn a plain button with formmethod=get into a read tool", async () => {
+    const html = `<form id="p" method="post" action="/p"><input name="note" aria-label="Note"><button type="button" formmethod="get" formaction="/preview">Show preview</button><button>Save</button></form>`;
+    const scan = await scanOwner(html);
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.kind, c.riskClass, c.method, c.action ?? null])).toEqual([
+      ["Save", "form", "write", "post", null],
+      ["Show preview", "form", "write", "post", null],
+    ]);
+  });
+
+  it("names a GET results submit after the button and keeps the search field", async () => {
+    const html = `<h1>Orders</h1><form id="o" method="post" action="/save"><input name="q" type="search" aria-label="Find orders"><input name="note" aria-label="Note"><button>Save</button><button type="submit" formmethod="get" formaction="/results">Show results</button></form>`;
+    const scan = await scanOwner(html);
+    const proposal = await inferGenericCapabilities(scan);
+    const tools = proposal.tools.map((t) => [t.name, Object.keys(t.inputSchema.properties)]);
+    expect(tools).toEqual([
+      ["save", ["q", "note"]],
+      ["search_orders", ["q"]],
+      ["search_results", ["q", "note"]],
+    ]);
   });
 });

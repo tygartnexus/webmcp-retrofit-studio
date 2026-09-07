@@ -143,7 +143,11 @@ function truncate(value: string, budget: number): string {
 
 function objectNoun(capability: CapabilityObservation): string {
   const searchField = capability.fields.find((field) => field.inputType === "search" || /search/i.test(field.label ?? ""));
-  for (const source of [searchField?.label, capability.heading]) {
+  // A search derived from a submit button is named after that button, so it never shadows the form's own search.
+  const sources = capability.id.startsWith("action:")
+    ? [capability.actionLabel, searchField?.label, capability.heading]
+    : [searchField?.label, capability.heading];
+  for (const source of sources) {
     const noun = (source ?? "").replace(LEADING_VERBS, "").trim();
     if (noun && !BARE_SEARCH_VERB.test(noun)) return noun;
   }

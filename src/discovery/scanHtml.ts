@@ -1,5 +1,18 @@
 import type { HtmlSnapshot } from "../fixtures/genericFixtures";
 import { sha256Hex } from "./scanOwnedFixture";
+import { attributeSelector, groupSelector, selectorFor, structuralSelector, uniqueId } from "./scanSelectors";
+import { clipLabel, text, visibleText } from "./scanText";
+import {
+  CREDENTIAL_ACTION_PATTERN,
+  FINALIZE_PATTERN,
+  NAVIGATION_PATTERN,
+  NEUTRAL_ACTION_PATTERN,
+  NEXT_PATTERN,
+  PAYMENT_NAME_PATTERN,
+  PREVIOUS_PATTERN,
+  READ_ACTION_PATTERN,
+  SEARCH_PATTERN,
+} from "./scanVocabulary";
 import { deepFreeze } from "../lib/deepFreeze";
 
 /**
@@ -104,161 +117,6 @@ export interface GenericScanResult {
 }
 
 const MAX_HTML_CHARS = 2_000_000;
-/*
- * Action vocabulary. Latin-script terms are matched on word boundaries; CJK
- * terms are matched as substrings. Every language list errs toward exclusion:
- * a false finalize or credential match keeps an action off the tool surface,
- * which is the safe direction. JavaScript's  is ASCII-based, so every Latin
- * term must start and end with an ASCII letter (diacritics only inside).
- * Read verbs are Latin-script only; CJK read coverage is the search terms.
- */
-const FINALIZE_TERMS = [
-  "place order", "pay", "purchase", "checkout", "confirm", "finali[sz]e", "delete", "remove", "cancel",
-  "destroy", "purge", "submit order", "book now", "deactivate", "close account", "terminate", "unsubscribe",
-  "erase", "wipe",
-  "löschen", "entfernen", "bestellen", "kostenpflichtig", "kaufen", "bezahlen", "zahlen", "bestätigen",
-  "kündigen", "stornieren", "konto schließen", "deaktivieren",
-  "supprimer", "effacer", "commander", "acheter", "payer", "confirmer", "résilier", "annuler",
-  "se désabonner", "désactiver",
-  "eliminar", "borrar", "comprar", "pagar", "confirmar", "cancelar", "darse de baja", "desactivar",
-  "finalizar compra",
-  "elimina(?:re)?", "cancella(?:re)?", "acquista(?:re)?", "paga(?:re)?", "conferma(?:re)?", "annulla(?:re)?",
-  "disattiva(?:re)?",
-  "excluir", "apagar", "encerrar", "desativar",
-  "verwijderen", "kopen", "betalen", "bevestigen", "opzeggen", "annuleren", "deactiveren",
-];
-const FINALIZE_TERMS_CJK = ["削除", "購入", "注文", "支払", "確定", "退会", "解約", "删除", "购买", "订单", "支付", "确认", "注销"];
-const CREDENTIAL_TERMS = [
-  "log ?in", "sign ?in", "log ?out", "sign ?out", "authenticate", "password",
-  "anmelden", "einloggen", "abmelden", "ausloggen", "passwort", "kennwort",
-  "connexion", "se connecter", "connectez-vous", "déconnexion", "se déconnecter", "mot de passe",
-  "iniciar sesión", "acceder", "cerrar sesión", "contraseña",
-  "accedi", "accesso", "esci",
-  "entrar", "sair", "senha",
-  "inloggen", "aanmelden", "uitloggen", "afmelden", "wachtwoord",
-];
-const CREDENTIAL_TERMS_CJK = ["ログイン", "ログアウト", "パスワード", "登录", "登出", "密码"];
-const SEARCH_TERMS = [
-  "search", "find", "filter", "look ?up", "browse",
-  "suchen", "filtern", "rechercher", "chercher", "filtrer", "buscar", "filtrar", "cerca", "pesquisar", "zoeken",
-];
-const SEARCH_TERMS_CJK = ["検索", "搜索"];
-const PREVIOUS_TERMS = ["previous", "prev", "back", "zurück", "précédent", "anterior", "indietro", "vorige", "voltar"];
-const PREVIOUS_TERMS_CJK = ["前へ", "上一页", "前のページ", "戻る"];
-const NEXT_TERMS = ["next", "weiter", "suivant", "siguiente", "avanti", "próximo", "seguinte", "volgende"];
-const NEXT_TERMS_CJK = ["次へ", "下一页", "次のページ"];
-const READ_VERBS = [
-  "go", "apply filters?", "sort", "show", "view", "list", "next", "previous", "prev", "page", "refresh", "load more",
-  "export", "weiter", "zurück", "anzeigen", "suivant", "précédent", "afficher", "siguiente", "anterior", "mostrar",
-  "avanti", "indietro", "mostra", "próximo", "seguinte", "volgende", "vorige", "tonen",
-];
-
-function vocabulary(latin: readonly string[], cjk: readonly string[], anchored = false): RegExp {
-  const latinGroup = `${anchored ? "^" : "\\b"}(?:${latin.join("|")})\\b`;
-  const cjkGroup = `${anchored ? "^" : ""}(?:${cjk.join("|")})`;
-  return new RegExp(`${latinGroup}|${cjkGroup}`, "iu");
-}
-
-/*
- * Ambiguous verbs followed by an explicit read or neutral object are not
- * exclusions: "Remove filter" clears a filter, "Acceder al catálogo" opens a
- * catalogue, "Entrar em contato" gets in touch. The verb alone still excludes.
- */
-const NEUTRAL_VERBS = ["remove", "clear", "reset", "cancel", "annuler", "cancelar", "annulla", "acceder al?", "entrar e[mn]", "accedi al", "accéder au", "accéder à"];
-const NEUTRAL_ARTICLES = ["the", "el", "la", "los", "las", "o", "a", "il", "le", "les", "de", "du", "des"];
-const NEUTRAL_OBJECTS = [
-  "filters?", "filtros?", "filtres?", "filtri", "search", "búsqueda", "recherche", "ricerca", "busca", "catálogo",
-  "catalogo", "catalogue", "catalog", "contato", "contacto", "contact", "contatto", "lists?", "lista", "liste",
-  "selection", "selección", "sélection", "selezione", "seleção", "view", "vista", "vue", "sort", "orden", "ordre",
-];
-const NEUTRAL_ACTION_PATTERN = new RegExp(
-  `^(?:${NEUTRAL_VERBS.join("|")})\\s+(?:(?:${NEUTRAL_ARTICLES.join("|")})\\s+)?(?:${NEUTRAL_OBJECTS.join("|")})\\s*$`,
-  "iu",
-);
-
-const FINALIZE_PATTERN = vocabulary(FINALIZE_TERMS, FINALIZE_TERMS_CJK);
-const SEARCH_PATTERN = vocabulary(SEARCH_TERMS, SEARCH_TERMS_CJK);
-/** Action labels that read or navigate without changing state. */
-const READ_ACTION_PATTERN = vocabulary([...SEARCH_TERMS, ...READ_VERBS], SEARCH_TERMS_CJK, true);
-const CREDENTIAL_ACTION_PATTERN = vocabulary(CREDENTIAL_TERMS, CREDENTIAL_TERMS_CJK);
-const STEP_WORDS = ["step", "page", "schritt", "seite", "étape", "paso", "página", "passo", "pagina", "stap"];
-const CONTINUE_TERMS = ["continue", "go back", "skip", "fortfahren", "continuer", "continuar", "prosegui", "doorgaan"];
-const CONTINUE_TERMS_CJK = ["続ける", "继续"];
-
-/**
- * The whole label is one of the words, optionally followed by a step or page
- * word and a number. With `bareSteps`, a step word alone ("Page 2") also
- * matches; that is right for wizard buttons but not for a pager direction.
- */
-function wholeLabel(latin: readonly string[], cjk: readonly string[], bareSteps = false): RegExp {
-  const words = `(?:${[...latin, ...cjk].join("|")})`;
-  const steps = `(?:${STEP_WORDS.join("|")})`;
-  const body = bareSteps ? `${words}(?:\\s+${steps})?|${steps}` : `${words}(?:\\s+${steps})?`;
-  return new RegExp(`^(?:${body})\\s*\\d*$`, "iu");
-}
-
-const PREVIOUS_PATTERN = wholeLabel(PREVIOUS_TERMS, PREVIOUS_TERMS_CJK);
-const NEXT_PATTERN = wholeLabel(NEXT_TERMS, NEXT_TERMS_CJK);
-/** Wizard navigation: a type="button" whose whole label is a step verb is not an action. */
-const NAVIGATION_PATTERN = wholeLabel(
-  [...PREVIOUS_TERMS, ...NEXT_TERMS, ...CONTINUE_TERMS],
-  [...PREVIOUS_TERMS_CJK, ...NEXT_TERMS_CJK, ...CONTINUE_TERMS_CJK],
-  true,
-);
-const PAYMENT_NAME_PATTERN = /(card|cvv|cvc|expir|iban|routing|account ?number)/i;
-
-
-function text(node: Element | null): string {
-  return (node?.textContent ?? "").replace(/\s+/g, " ").trim();
-}
-
-const ID_PATTERN = /^[A-Za-z][\w-]*$/;
-
-/** The element's id, only when it is well formed and unique in the document. */
-function uniqueId(element: Element, document: Document): string | null {
-  const id = element.getAttribute("id");
-  if (!id || !ID_PATTERN.test(id)) return null;
-  return document.querySelectorAll(`#${CSS.escape(id)}`).length === 1 ? id : null;
-}
-
-/**
- * A structural path from the nearest uniquely identified ancestor (or body),
- * one nth-of-type step per level, so it resolves to exactly this element.
- * Unlike a document-wide index, nth-of-type is sibling-scoped, which is why
- * the path must include every level.
- */
-function structuralSelector(element: Element, document: Document): string {
-  const steps: string[] = [];
-  let current: Element | null = element;
-  while (current && current !== document.body && current !== document.documentElement) {
-    const id = uniqueId(current, document);
-    if (id) {
-      steps.unshift(`#${id}`);
-      return steps.join(" > ");
-    }
-    const parent: Element | null = current.parentElement;
-    const tag = CSS.escape(current.tagName.toLowerCase());
-    const sameTag = parent ? [...parent.children].filter((child) => child.tagName === current!.tagName) : [current];
-    steps.unshift(sameTag.length === 1 ? tag : `${tag}:nth-of-type(${sameTag.indexOf(current) + 1})`);
-    current = parent;
-  }
-  steps.unshift("body");
-  return steps.join(" > ");
-}
-
-function selectorFor(element: Element, document: Document): string {
-  const id = uniqueId(element, document);
-  return id ? `#${id}` : structuralSelector(element, document);
-}
-
-function attributeSelector(scope: string, attribute: string, value: string): string {
-  return `${scope} [${attribute}="${CSS.escape(value)}"]`;
-}
-
-/** Radio and checkbox groups are addressed by type and name, never catching a same-name text control. */
-function groupSelector(scope: string, inputType: string, name: string): string {
-  return `${scope} input[type="${inputType}"][name="${CSS.escape(name)}"]`;
-}
 
 function nearestHeading(element: Element, document: Document): string {
   const headings = [...document.querySelectorAll("h1, h2, h3, h4, h5, h6")];
@@ -424,7 +282,7 @@ function observeCheckbox(control: Element, form: Element, field: FieldObservatio
   const label = labelFor(control, form);
   const legend = text(control.closest("fieldset")?.querySelector("legend") ?? null);
   // A checkbox without a value attribute submits "on", which is therefore its option key.
-  const value = control.getAttribute("value") || "on";
+  const value = control.getAttribute("value") ?? "on";
   return { ...field, ...(label ? { label } : {}), ...(legend ? { groupLabel: legend } : {}), options: [value] };
 }
 
@@ -506,19 +364,28 @@ function collapseRadioGroups(
   return collapsed;
 }
 
+const BUTTON_SELECTOR = "button, input[type=submit], input[type=image], input[type=button]";
+
+/** A submit button or an image button submits the form; a plain button does not. */
+function isSubmitType(type: string): boolean {
+  return type === "submit" || type === "image";
+}
+
+function buttonLabel(button: Element, type: string): string {
+  if (button.tagName !== "INPUT") return text(button);
+  if (type === "image") return button.getAttribute("alt")?.trim() || button.getAttribute("title")?.trim() || "Submit";
+  return button.getAttribute("value")?.trim() || (type === "button" ? "Button" : "Submit");
+}
+
 function observeButtons(form: Element, document: Document): ButtonObservation[] {
-  return [...form.querySelectorAll("button, input[type=submit], input[type=image]")].map((button) => {
-    const formAction = button.getAttribute("formaction")?.trim();
-    const formMethod = button.getAttribute("formmethod")?.toLowerCase();
-    const imageLabel = button.getAttribute("alt")?.trim() || button.getAttribute("title")?.trim();
+  return [...form.querySelectorAll(BUTTON_SELECTOR)].map((button) => {
+    const type = (button.getAttribute("type") ?? "submit").toLowerCase();
+    // Only a submitting control can redirect the submission; formaction on a plain button is inert.
+    const formAction = isSubmitType(type) ? button.getAttribute("formaction")?.trim() : undefined;
+    const formMethod = isSubmitType(type) ? button.getAttribute("formmethod")?.toLowerCase() : undefined;
     return {
-      label:
-        button.tagName === "INPUT"
-          ? (button.getAttribute("type") ?? "").toLowerCase() === "image"
-            ? imageLabel || "Submit"
-            : (button.getAttribute("value") ?? "Submit")
-          : text(button),
-      type: (button.getAttribute("type") ?? "submit").toLowerCase(),
+      label: buttonLabel(button, type),
+      type,
       selector: selectorFor(button, document),
       ...(formAction ? { formAction } : {}),
       ...(formMethod === "get" || formMethod === "post" ? { formMethod } : {}),
@@ -560,29 +427,6 @@ function classifyForm(
  * first non-form cell of its table row, or the heading of a repeated sibling
  * container. Never a hidden value.
  */
-const ROW_LABEL_BUDGET = 60;
-const NON_VISIBLE_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT", "TEXTAREA", "SELECT", "OPTION"]);
-/** Common stylesheet-driven hiding; inline styles are checked separately. Stylesheets themselves are not evaluated. */
-const HIDDEN_CLASS_PATTERN = /(^|\s)(sr-only|visually-hidden|visuallyhidden|hidden|d-none|screen-reader-text|is-hidden)(\s|$)/i;
-
-function isHiddenElement(element: Element): boolean {
-  if (NON_VISIBLE_TAGS.has(element.tagName)) return true;
-  if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return true;
-  if (HIDDEN_CLASS_PATTERN.test(element.getAttribute("class") ?? "")) return true;
-  const style = (element.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
-  return style.includes("display:none") || style.includes("visibility:hidden");
-}
-
-/** Text a person can see: skips hidden elements and control values entirely. */
-function visibleText(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
-  if (node.nodeType !== Node.ELEMENT_NODE || isHiddenElement(node as Element)) return "";
-  return [...node.childNodes].map(visibleText).join("").replace(/\s+/g, " ").trim();
-}
-
-function clipLabel(value: string): string {
-  return value.length <= ROW_LABEL_BUDGET ? value : `${value.slice(0, ROW_LABEL_BUDGET - 1)}…`;
-}
 
 function rowLabelFor(form: Element): string | undefined {
   const row = form.closest("tr");
@@ -625,7 +469,7 @@ function buttonCapability(
     method: effectiveMethod,
     actionLabel: button.label,
     riskClass,
-    fields: fields.filter((field) => field.inputType !== "search"),
+    fields: effectiveMethod === "get" ? fields : fields.filter((field) => field.inputType !== "search"),
     buttons: [button],
   };
 }
@@ -636,7 +480,8 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   const method = (form.getAttribute("method") ?? "get").toLowerCase() === "post" ? "post" : "get";
   const heading = nearestHeading(form, document);
   const buttons = observeButtons(form, document);
-  const submit = buttons.find((button) => button.type === "submit") ?? buttons[0];
+  // The primary action is the first submitting control; a plain button never stands in for it.
+  const submit = buttons.find((button) => isSubmitType(button.type));
   const actionLabel = submit?.label ?? "Submit";
   const primaryMethod = submit?.formMethod ?? method;
   const primaryAction = submit?.formAction;
@@ -686,7 +531,7 @@ function observeForm(form: Element, document: Document): CapabilityObservation[]
   for (const button of buttons.filter((candidate) => candidate.type === "button" && !isNavigation(candidate))) {
     extras.push(buttonCapability(button, base, "post", form, fields));
   }
-  for (const button of buttons.filter((candidate) => candidate.type === "submit" && candidate !== submit)) {
+  for (const button of buttons.filter((candidate) => isSubmitType(candidate.type) && candidate !== submit)) {
     extras.push(buttonCapability(button, base, method, form, fields));
   }
   return [primary, ...extras];
@@ -715,18 +560,19 @@ function headerCells(table: Element): string[] {
 function paginationScope(table: Element): Element[] {
   const parent = table.parentElement;
   if (!parent) return [];
-  const tables = [...parent.children].filter((child) => child.tagName === "TABLE");
+  const lone = parent.querySelectorAll("table").length <= 1;
   const isRoot = parent === parent.ownerDocument.body || parent === parent.ownerDocument.documentElement;
-  if (tables.length <= 1 && !isRoot) return [parent];
+  if (lone && !isRoot) return [parent];
   const scope: Element[] = [];
   // Only a lone table claims the siblings before it; between two tables a pager belongs to the one above it.
-  let before = tables.length <= 1 ? table.previousElementSibling : null;
-  while (before && before.tagName !== "TABLE") {
+  const holdsTable = (element: Element) => element.tagName === "TABLE" || element.querySelector("table") !== null;
+  let before = lone ? table.previousElementSibling : null;
+  while (before && !holdsTable(before)) {
     scope.push(before);
     before = before.previousElementSibling;
   }
   let after = table.nextElementSibling;
-  while (after && after.tagName !== "TABLE") {
+  while (after && !holdsTable(after)) {
     scope.push(after);
     after = after.nextElementSibling;
   }
@@ -787,9 +633,10 @@ export async function scanHtml(snapshot: HtmlSnapshot): Promise<GenericScanResul
 
   const document = new DOMParser().parseFromString(html, "text/html");
   const scriptsIgnored = document.querySelectorAll("script").length;
-  const navigationButtonsSkipped = [...document.querySelectorAll("form button")].filter(
-    (button) => (button.getAttribute("type") ?? "submit").toLowerCase() === "button" && NAVIGATION_PATTERN.test(text(button).trim()),
-  ).length;
+  const navigationButtonsSkipped = [...document.querySelectorAll("form button, form input[type=button]")].filter((button) => {
+    const type = (button.getAttribute("type") ?? "submit").toLowerCase();
+    return type === "button" && NAVIGATION_PATTERN.test(buttonLabel(button, type).trim());
+  }).length;
   const forms = [...document.querySelectorAll("form")].flatMap((form) => observeForm(form, document));
   const tables = [...document.querySelectorAll("table")]
     .map((table) => observeTable(table, document))

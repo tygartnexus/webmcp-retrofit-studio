@@ -38,7 +38,8 @@ HtmlSnapshot ──scanHtml──▶ GenericScanResult ──inferGenericCapabil
                              fields, safety)                                  hashes)
 ```
 
-Files: `src/fixtures/genericFixtures.ts`, `src/discovery/scanHtml.ts`,
+Files: `src/fixtures/genericFixtures.ts`, `src/discovery/scanHtml.ts` (with
+`scanVocabulary.ts`, `scanSelectors.ts`, and `scanText.ts` beside it),
 `src/discovery/inferGenericCapabilities.ts`,
 `src/screens/GenericCandidates.tsx`. The booking flow's screens live in
 `src/screens/booking/` and shared chrome in `src/components/`; `src/App.tsx`
@@ -60,7 +61,8 @@ and select options. Field values are never read. Same-name radios collapse
 into one enum field; two or more same-name checkboxes collapse into one
 multi-select enum field whose value is an array of option keys, labelled by
 the fieldset legend. A lone checkbox stays boolean; a checkbox without a value attribute has the
-option key "on", as the browser would submit. Repeated names inside one
+option key "on", as the browser would submit, and an empty value attribute
+is the empty key. Repeated names inside one
 form get numeric suffixes so schema keys stay distinct. A control with no
 name and no id can never be a parameter, but when it is a password, hidden,
 file, or payment control it is still recorded as excluded, so it still
@@ -73,8 +75,9 @@ otherwise the siblings up to the next table) and only from links with
 `rel="prev"`/`rel="next"` or whose whole text is previous/next wording
 ("Next page", "Zurück"); never from "the first link", never from a
 "Back to dashboard" style link, and never from a bare page number ("Page 2"),
-which is neither direction. A lone table sees its neighbouring siblings on
-both sides; between two tables a pager belongs to the table above it.
+which is neither direction. A lone table (no other table anywhere in its
+container) sees its neighbouring siblings on both sides; between two tables
+a pager belongs to the table above it.
 
 Buttons: `type="button"` controls whose whole label is step-navigation
 wording (next, back, previous, continue, skip and their translations,
@@ -83,17 +86,23 @@ safety envelope; "Next of kin" is an action, "Next step" is navigation.
 Other `type="button"` controls and every submit button beyond the first
 become their own capability, classified by their own label, and a submit
 button's `formaction` and `formmethod` override the form's for that
-capability, including the first submit button; an image submit uses its
-alt text as the label. Excluded controls are counted once per form even
-when several capabilities share the form's fields. A form inside a table row or a repeated container carries a row
+capability, including the first submit button. The primary action is the
+first submitting control (a submit button or an image button, labelled by
+its alt text); a plain button never stands in for it, and a form with no
+submitting control keeps the default "Submit" action. `input type="button"`
+counts like a `button type="button"`. A GET submit button keeps the form's
+search fields. Excluded controls are counted once per form even when
+several capabilities share the form's fields. A form inside a table row or a repeated container carries a row
 label taken from visible text only, clipped to 60 characters: the first
 non-form cell, or the block's heading outside the form, or its first visible
-text. Hidden means the hidden attribute, aria-hidden, inline display:none or
-visibility:hidden, common hiding classes (sr-only, visually-hidden, hidden,
-d-none), and script, style, template, textarea, and select content.
+text. The same visible-text rule applies to headings, button labels, labels, and
+legends, so hidden text never reaches a tool name, description, or the
+export. Hidden means the hidden attribute, aria-hidden, inline display:none
+or visibility:hidden, common hiding classes (sr-only, visually-hidden,
+hidden, d-none), and script, style, template, textarea, and select content.
 Stylesheets are not evaluated, so text hidden only by an external rule under
-another class name is still visible to the scan; owners should check row
-labels in the proposal.
+another class name is still visible to the scan; owners should check names
+and labels in the proposal.
 
 ### Classification
 
