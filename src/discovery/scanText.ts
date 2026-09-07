@@ -38,7 +38,7 @@ function inlineDeclarations(element: Element): Map<string, string> {
   for (const declaration of (element.getAttribute("style") ?? "").toLowerCase().split(";")) {
     const separator = declaration.indexOf(":");
     if (separator > 0) {
-      const value = declaration.slice(separator + 1).replace(/!important\s*$/, "").trim();
+      const value = declaration.slice(separator + 1).replace(/!\s*important\s*$/, "").trim();
       declarations.set(declaration.slice(0, separator).trim(), value);
     }
   }

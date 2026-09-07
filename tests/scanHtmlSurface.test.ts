@@ -155,3 +155,34 @@ describe("R69: an ordinal title is itself kept unique", () => {
     expect(literal.tools.map((t) => t.title)).toEqual(["Save", "Preview", "Preview (2)", "Preview (3)"]);
   });
 });
+
+describe("R70: a verb past the label budget still classifies", () => {
+  it("excludes a finalize action whose verb sits after 115 characters, in content and in a title", async () => {
+    const padding = "A".repeat(115);
+    const content = await scanOwner(post(`${padding} delete account`));
+    expect(content.capabilities.map((c) => [c.actionLabel.length, c.riskClass])).toEqual([[120, "finalize"]]);
+    const title = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button title="${padding} delete account">Go</button></form>`);
+    expect(title.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Go", "finalize"]]);
+    const login = await scanOwner(`<form method="post" action="/x"><input name="a" aria-label="A"><button aria-label="${padding} log in">Go</button></form>`);
+    expect(login.capabilities.map((c) => c.riskClass)).toEqual(["credential"]);
+  });
+});
+
+describe("R71: !important with inner whitespace still hides", () => {
+  it("drops text under display:none ! important", async () => {
+    const scan = await scanOwner(post(`Save<span style="display:none ! important"> and delete account</span>`));
+    expect(scan.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save", "write"]]);
+  });
+});
+
+describe("R72: a title carries one ordinal at most", () => {
+  it("renumbers from the base when a table ordinal is already taken", async () => {
+    const table = (h: string) => `<table><thead><tr><th>${h}</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>`;
+    const proposal = await inferGenericCapabilities(
+      await scanOwner(`<h2>Levels</h2>${table("A")}${table("B")}${table("C")}<form method="post" action="/x"><input name="a" aria-label="A"><button>Read Levels</button><button type="button">Read Levels</button></form>`),
+    );
+    const titles = proposal.tools.map((t) => t.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    for (const title of titles) expect(title).not.toMatch(/\) \(\d+\)$/);
+  });
+});

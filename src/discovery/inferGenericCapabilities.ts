@@ -300,9 +300,11 @@ function proposeTool(capability: CapabilityObservation, taken: Set<string>, tabl
 function withDistinctTitles(tools: readonly ProposedTool[]): ProposedTool[] {
   const used = new Set<string>();
   return tools.map((tool) => {
-    // An ordinal title can already exist (a table ordinal, or a literal "Preview (2)" label), so keep counting.
+    // An ordinal title can already exist (a table ordinal, or a literal "Preview (2)" label), so keep counting
+    // from the title's base rather than stacking a second ordinal on the first.
+    const base = tool.title.replace(/ \(\d+\)$/, "");
     let title = tool.title;
-    for (let ordinal = 2; used.has(title); ordinal += 1) title = titled(tool.title, ` (${ordinal})`);
+    for (let ordinal = 2; used.has(title); ordinal += 1) title = titled(base, ` (${ordinal})`);
     used.add(title);
     return title === tool.title ? tool : { ...tool, title };
   });

@@ -56,7 +56,7 @@ export interface FieldObservation {
 
 export interface ButtonObservation {
   label: string;
-  /** Every name the button carries; risk is judged against all of them. */
+  /** Every name the button carries, unclipped; risk is judged against all of them. */
   riskLabels: readonly string[];
   type: string;
   selector: string;
@@ -420,9 +420,10 @@ function buttonNames(button: Element, type: string): ButtonNames {
   const content = isInput ? attribute(type === "image" ? "alt" : "value") : accessibleContent(button);
   const label = clipTo(referencedName(button) || ariaLabel || content || title || fallback, LABEL_BUDGET);
   const rendered = isInput ? "" : renderedText(button);
-  // The title is judged even when content wins the label, so an icon with a title-only verb is classified too.
+  // Every name is judged unclipped, title included: a verb past the label budget still counts, and an
+  // icon with a title-only verb is classified too. Only the displayed label is clipped.
   const names = [label, ariaLabel, content, title, rendered].filter((name): name is string => Boolean(name));
-  return { label, riskLabels: [...new Set(names.map((name) => clipTo(name, LABEL_BUDGET)))] };
+  return { label, riskLabels: [...new Set(names)] };
 }
 
 function observeButtons(form: Element, document: Document): ButtonObservation[] {

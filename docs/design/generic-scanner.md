@@ -124,9 +124,10 @@ not replaced by a generic "Submit". The rendered text a button carries can
 include an icon-font ligature or a tooltip, so a safe action beside an
 aria-hidden "delete" glyph is excluded as well; that is the safe direction,
 and the owner sees it in the excluded list. Risk
-is judged against every name a button carries (the accessible name, its
-aria-label, its content, its title, and its rendered text including
-aria-hidden and screen-reader-only spans), so an ARIA override cannot turn a visible
+is judged against every name a button carries, unclipped (the accessible
+name, its aria-label, its content, its title, and its rendered text
+including aria-hidden and screen-reader-only spans), while only the
+displayed label is clipped to 120 characters, so an ARIA override cannot turn a visible
 "Delete account" into a write tool.
 Skipped navigation buttons are counted from the controls each form owns.
 When a search field has its own read tool, or a GET submit button already
