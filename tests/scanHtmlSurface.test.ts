@@ -378,3 +378,52 @@ describe("R84: a wrapping label names the button by its own text", () => {
     expect(proposal.tools.map((t) => t.name)).toEqual(["draft"]);
   });
 });
+
+describe("R85: a choice that is the action is judged whatever the button says", () => {
+  it("excludes a lone destructive select under a specific button and a select named action beside other fields", async () => {
+    const lone = await scanOwner(
+      `<form method="post" action="/x"><select name="op" aria-label="Choose"><option value="keep">Keep</option><option value="delete_account">Delete my account</option></select><button>Save changes</button></form>`,
+    );
+    expect(lone.capabilities.map((c) => [c.actionLabel, c.riskClass, c.riskEvidence])).toEqual([["Save changes", "finalize", "Delete my account"]]);
+    const named = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="action" aria-label="Action"><option value="keep">Keep</option><option value="delete_account">Delete my account</option></select><button>Send request</button></form>`,
+    );
+    expect(named.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const filter = await scanOwner(
+      `<form method="get" action="/orders"><select name="status" aria-label="Status"><option value="active">Active</option><option value="deleted">Deleted</option></select><button>Filter</button></form>`,
+    );
+    expect(filter.capabilities.map((c) => [c.kind, c.riskClass])).toEqual([["search", "read"]]);
+    const data = await scanOwner(
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="reason" aria-label="Reason"><option value="q">Question</option><option value="delete">Delete my account</option></select><button>Send message</button></form>`,
+    );
+    expect(data.capabilities.map((c) => c.riskClass)).toEqual(["write"]);
+  });
+});
+
+describe("R86: consent wording is exempt, a confirmed destructive noun is not", () => {
+  it("finalizes Confirm deletion and Confirm cancellation under a generic button", async () => {
+    const page = (option: string) =>
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><label><input type="radio" name="op" value="d"> ${option}</label><label><input type="radio" name="op" value="k"> Keep</label><button>Go</button></form>`;
+    const deletion = await scanOwner(page("Confirm deletion"));
+    expect(deletion.capabilities.map((c) => [c.riskClass, c.riskEvidence])).toEqual([["finalize", "deletion"]]);
+    const cancellation = await scanOwner(page("Confirm cancellation"));
+    expect(cancellation.capabilities.map((c) => c.riskClass)).toEqual(["finalize"]);
+    const consent = await scanOwner(page("I confirm I am over 18"));
+    expect(consent.capabilities.map((c) => c.riskClass)).toEqual(["write"]);
+  });
+});
+
+describe("R87: generic labels survive filler words and punctuation", () => {
+  it("judges choices under Submit form, Go ahead, OK, continue, Continue →, Next », and Save.", async () => {
+    const page = (button: string) =>
+      `<form method="post" action="/x"><input name="n" aria-label="Name"><select name="mode" aria-label="Mode"><option value="keep">Keep</option><option value="delete_account">Delete my account</option></select><button>${button}</button></form>`;
+    for (const label of ["Submit form", "Go ahead", "OK, continue", "Continue →", "Next »", "Save."]) {
+      const scan = await scanOwner(page(label));
+      expect([label, scan.capabilities[0].riskClass]).toEqual([label, "finalize"]);
+    }
+    const specific = await scanOwner(page("Save profile"));
+    expect(specific.capabilities.map((c) => c.riskClass)).toEqual(["write"]);
+    const overridden = await scanOwner(page(`<span aria-hidden="true">Go</span>`).replace("<button>", `<button aria-label="Save profile">`));
+    expect(overridden.capabilities.map((c) => [c.actionLabel, c.riskClass])).toEqual([["Save profile", "finalize"]]);
+  });
+});

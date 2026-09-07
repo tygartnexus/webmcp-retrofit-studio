@@ -2211,15 +2211,15 @@ code,
 
 /* The description column absorbs a long unbroken value; the first three keep their words whole. */
 .parameter-table th:nth-child(1) {
-  width: 26%;
+  width: 24%;
 }
 
 .parameter-table th:nth-child(2) {
-  width: 16%;
+  width: 14%;
 }
 
 .parameter-table th:nth-child(3) {
-  width: 14%;
+  width: 20%;
 }
 
 .parameter-table th,

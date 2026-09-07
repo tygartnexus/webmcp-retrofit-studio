@@ -128,14 +128,18 @@ and the owner sees it in the excluded list. Risk
 is judged against every name a button carries, unclipped (the accessible
 name, its aria-label, its label element, its content, its title, its
 aria-describedby text, and its rendered text including aria-hidden and
-screen-reader-only spans), and, when the button is generic ("Go", "Continue", "Submit", or the
-default), against every option name and value of the form's selects,
+screen-reader-only spans), and, when any name the button carries is generic ("Go", "Continue",
+"Submit form", "Next »", or the default) or, on a POST form, when the choice control is
+the form's only parameter or is itself named the action or operation,
+against every option name and value of the form's selects,
 radios, and checkboxes (option text, label and aria-label attributes,
 optgroup labels, and a radio's or checkbox's accessible name), so a select
 used as an action menu with a "Delete my account" option excludes the form
 whole. Under a specific button ("Send message", "Save plan") the choices are
 plain data and are not judged, and consent wording on a choice ("I confirm
-I am over 18") is a statement, not an action. A label element counts only
+I am over 18") is a statement, not an action, while "Confirm deletion" or
+"Confirm cancellation" still finalize because the deverbal nouns are in
+the vocabulary. A label element counts only
 when the button really is its control, and a wrapping label names the
 button by its own text, not the button's. An excluded action carries the name, option,
 description, or field that decided it, and the candidates screen shows it

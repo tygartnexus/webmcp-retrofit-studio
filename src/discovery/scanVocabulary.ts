@@ -13,6 +13,7 @@
  */
 const FINALIZE_TERMS = [
   "place order", "pay", "purchase", "checkout", "confirm", "finali[sz]e", "delete", "remove", "cancel",
+  "deletion", "cancellation", "removal", "termination", "deactivation", "erasure", "unsubscription",
   "destroy", "purge", "submit order", "book now", "deactivate", "close account", "terminate", "unsubscribe",
   "erase", "wipe",
   "löschen", "entfernen", "bestellen", "kostenpflichtig", "kaufen", "bezahlen", "zahlen", "bestätigen",
@@ -89,9 +90,20 @@ const GENERIC_ACTION_TERMS = [
   "enviar", "continuar", "aceptar", "guardar", "aplicar",
   "invia", "avanti", "salva", "conferma", "applica",
   "verzenden", "doorgaan", "opslaan", "toepassen",
-  "送信", "次へ", "保存", "実行", "提交", "继续", "保存", "确定",
+  "送信", "次へ", "保存", "実行", "提交", "继续", "确定",
 ];
-export const GENERIC_ACTION_PATTERN = new RegExp(`^(?:${GENERIC_ACTION_TERMS.join("|")})$`, "iu");
+/** Words that add nothing to a generic label: "Submit form", "Go ahead", "OK, continue", "Save now". */
+const GENERIC_FILLER = ["form", "ahead", "now", "please", "and", "the", "changes"];
+const GENERIC_WORDS = new Set([...GENERIC_ACTION_TERMS, ...GENERIC_FILLER]);
+
+/** True when every word of the label, punctuation and glyphs aside, is a generic verb or filler. */
+export function isGenericAction(label: string): boolean {
+  const words = label.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
+  return words.length > 0 && words.every((word) => GENERIC_WORDS.has(word));
+}
+
+/** A choice control whose own name or label says it selects the action ("action", "operation"). */
+export const ACTION_FIELD_PATTERN = /\b(action|operation|op)\b|アクション|操作/iu;
 
 /** Consent wording on a choice ("I confirm I am over 18") is a statement, not an action; it is not judged. */
 export const CONSENT_PATTERN = /\b(confirm\w*|bestätig\w*|confirm(?:er|ez|é|ée)|conferm\w*|bevestig\w*)\b|確認|确认/giu;
